@@ -122,7 +122,7 @@ async function pairEngine() {
 }
 async function syncSnapshot() {
   const b=event.currentTarget; busy(b,true,'Nuskaitoma...');
-  try { const r=await api('api/sync',{method:'POST',body:'{}'}); message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, problemų: ${r.problem_count ?? '-'}.`); await loadAll(); }
+  try { const r=await api('api/sync',{method:'POST',body:'{}'}); const warnings=(r.api_warnings||[]).length ? ` Įspėjimai: ${(r.api_warnings||[]).join(' | ')}` : ''; message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, problemų: ${r.problem_count ?? '-'}.${warnings}`, (r.api_warnings||[]).length ? 'warning' : 'success'); await loadAll(); }
   catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }
 }
 async function checkConfig() {

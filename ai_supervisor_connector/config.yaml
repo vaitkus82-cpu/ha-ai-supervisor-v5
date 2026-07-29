@@ -1,5 +1,5 @@
 name: AI Supervisor V5 Connector
-version: "5.0.0-alpha1"
+version: "5.0.0-alpha2"
 slug: ai_supervisor_connector
 description: Safe Home Assistant connector for the split AI Supervisor V5 engine running on a Windows mini PC
 url: https://github.com/vaitkus82-cpu/ha-ai-supervisor-v5/tree/main/ai_supervisor_connector
@@ -18,7 +18,7 @@ watchdog: http://[HOST]:[PORT:8099]/health
 homeassistant: 2026.7.0
 homeassistant_api: true
 hassio_api: true
-hassio_role: backup
+hassio_role: manager
 stage: experimental
 options:
   language: lt

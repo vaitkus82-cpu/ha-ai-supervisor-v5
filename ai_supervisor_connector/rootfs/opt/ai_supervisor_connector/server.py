@@ -30,7 +30,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha1"
+APP_VERSION = "5.0.0-alpha2"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -224,7 +224,7 @@ class HAClient:
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise APIError(f"Home Assistant API HTTP {exc.code}: {body[:800]}") from exc
+            raise APIError(f"Home Assistant API {method} /{path.lstrip('/')} HTTP {exc.code}: {body[:800]}") from exc
         except urllib.error.URLError as exc:
             raise APIError(f"Home Assistant API unavailable: {exc.reason}") from exc
         except json.JSONDecodeError as exc:
@@ -239,8 +239,28 @@ class HAClient:
         return value if isinstance(value, list) else []
 
     def check_config(self) -> dict[str, Any]:
-        value = self.request("POST", "/config/core/check_config", {}, timeout=120)
-        return value if isinstance(value, dict) else {"result": "unknown", "raw": value}
+        """Run the configuration check through the Supervisor API.
+
+        The Supervisor /core/check endpoint is intended for apps and is more
+        reliable than routing an admin-only Core REST endpoint through the
+        Home Assistant API proxy. A Core REST fallback is kept for compatibility.
+        """
+        supervisor_error: Exception | None = None
+        try:
+            value = SupervisorClient().request("POST", "/core/check", {}, timeout=180)
+            return value if isinstance(value, dict) else {"result": "unknown", "raw": value}
+        except APIError as exc:
+            supervisor_error = exc
+            LOGGER.warning("Supervisor configuration check failed, trying Core REST fallback: %s", exc)
+
+        try:
+            value = self.request("POST", "/config/core/check_config", None, timeout=180)
+            return value if isinstance(value, dict) else {"result": "unknown", "raw": value}
+        except APIError as core_exc:
+            raise APIError(
+                f"Configuration check failed via Supervisor ({supervisor_error}) "
+                f"and Core REST API ({core_exc})"
+            ) from core_exc
 
 
 class SupervisorClient:
@@ -405,8 +425,19 @@ def build_snapshot() -> dict[str, Any]:
         )
         total += len(clean.encode("utf-8"))
     client = HAClient()
-    states = [compact_state(item) for item in client.states()]
-    config = client.config()
+    api_warnings: list[str] = []
+    states: list[dict[str, Any]] = []
+    config: dict[str, Any] = {}
+    try:
+        states = [compact_state(item) for item in client.states()]
+    except APIError as exc:
+        LOGGER.warning("State collection failed; continuing with file-only snapshot: %s", exc)
+        api_warnings.append(str(exc))
+    try:
+        config = client.config()
+    except APIError as exc:
+        LOGGER.warning("Core config collection failed; continuing without metadata: %s", exc)
+        api_warnings.append(str(exc))
     snapshot = {
         "schema_version": 1,
         "snapshot_id": str(uuid.uuid4()),
@@ -424,6 +455,7 @@ def build_snapshot() -> dict[str, Any]:
         "truncated": truncated,
         "states": states,
         "state_count": len(states),
+        "api_warnings": api_warnings,
         "policy": {
             "secrets_excluded": True,
             "storage_excluded": True,
@@ -721,6 +753,7 @@ def status() -> dict[str, Any]:
             "file_count": snapshot.get("file_count", 0),
             "state_count": snapshot.get("state_count", 0),
             "truncated": snapshot.get("truncated", False),
+            "api_warnings": snapshot.get("api_warnings", []),
         },
         "proposal_count": len(proposals) if isinstance(proposals, list) else 0,
         "write_policy": {
