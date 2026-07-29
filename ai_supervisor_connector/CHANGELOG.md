@@ -1,17 +1,21 @@
 # Changelog
 
+## 5.0.0-alpha6
+
+- Added structural recognition for arbitrary `!include` automation and script files.
+- Root-list automation files are now catalogued even when not named `automations.yaml`.
+- Root-mapping script files are now catalogued even when not named `scripts.yaml`.
+- Added shape-based detection for single automation, script and scene definitions.
+- Improved keyed automation/script handling so component entity IDs remain stable.
+- Updated process-map UI to show primary entities, dependencies and non-expanding device context separately.
+- Dashboard references are explicitly marked as confirmation-only.
+- Preserved excluded secrets, disabled-by-default writes, backup, validation and rollback controls.
+
 ## 5.0.0-alpha5
 
-- Added a structural Home Assistant component catalogue generated locally with PyYAML.
-- Catalogues automations, scripts, scenes, templates and helper definitions without sending `.storage` files.
-- Added read-only Lovelace dashboard inventory through the Home Assistant WebSocket API.
-- Sends only dashboard titles, view paths, card counts and referenced entity IDs to the Windows Engine.
-- Added a dedicated process-map button and process-map display in the Home Assistant UI.
-- Added component and dashboard counts to snapshot/status information.
-- Added the `/api/process-map` bridge to the paired Windows Engine.
-- Preserved the disabled-by-default package-only write policy, backup, validation and rollback controls.
+- Added structural component and Lovelace inventories.
+- Added the first process-map UI and Engine bridge.
 
 ## 5.0.0-alpha4
 
 - Added filtered YAML problem detection and confidence categories.
-- Added unique issue and occurrence counts.

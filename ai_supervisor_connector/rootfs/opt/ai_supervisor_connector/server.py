@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha5"
+APP_VERSION = "5.0.0-alpha6"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -631,7 +631,83 @@ def _component_record(kind: str, key: str, payload: Any, path: str, index: int =
     }
 
 
+def _looks_like_automation(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    keys = {str(key) for key in value}
+    has_trigger = bool(keys & {"trigger", "triggers"})
+    has_action = bool(keys & {"action", "actions"})
+    return (has_trigger and has_action) or (has_action and bool(keys & {"condition", "conditions", "mode", "id"}))
+
+
+def _looks_like_script(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    keys = {str(key) for key in value}
+    return "sequence" in keys and not bool(keys & {"trigger", "triggers"})
+
+
+def _looks_like_scene(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    keys = {str(key) for key in value}
+    return "entities" in keys and bool(keys & {"name", "id"}) and not _looks_like_automation(value)
+
+
+def _path_component_hint(path: str) -> str:
+    lowered = path.lower().replace("\\", "/")
+    parts = set(Path(lowered).parts)
+    name = Path(lowered).name
+    if "automation" in parts or "automations" in parts or "automation" in name:
+        return "automation"
+    if "script" in parts or "scripts" in parts or "script" in name:
+        return "script"
+    if "scene" in parts or "scenes" in parts or "scene" in name:
+        return "scene"
+    return ""
+
+
+def _append_inferred_component(
+    components: list[dict[str, Any]],
+    payload: Any,
+    path: str,
+    key: str,
+    index: int,
+    hint: str = "",
+) -> bool:
+    kind = ""
+    if _looks_like_automation(payload):
+        kind = "automation"
+    elif _looks_like_script(payload):
+        kind = "script"
+    elif _looks_like_scene(payload):
+        kind = "scene"
+    elif hint in {"automation", "script", "scene"} and isinstance(payload, dict):
+        # Included files often omit the domain wrapper. Only accept a path hint
+        # when the entry is a mapping; the shape checks above remain preferred.
+        kind = hint
+    if not kind:
+        return False
+    key_text = str(key or "")
+    if key_text and not key_text.isdigit():
+        inferred_key = key_text
+    elif isinstance(payload, dict):
+        inferred_key = str(payload.get("id") or payload.get("alias") or payload.get("name") or key or index)
+    else:
+        inferred_key = str(key or index)
+    components.append(_component_record(kind, inferred_key, payload, path, index))
+    return True
+
+
 def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Build a component catalogue from package and include-style YAML files.
+
+    Home Assistant allows automations and scripts to be split into arbitrary
+    files via !include / !include_dir_* directives. Those included files often
+    have a root list or a root mapping without an ``automation:`` / ``script:``
+    wrapper. Alpha6 recognises those shapes instead of only relying on standard
+    filenames such as automations.yaml and scripts.yaml.
+    """
     components: list[dict[str, Any]] = []
     warnings: list[str] = []
     for item in files:
@@ -644,51 +720,87 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
         except Exception as exc:
             warnings.append(f"Component catalog skipped {path}: {exc}")
             continue
+
         lower_name = Path(path).name.lower()
-        if lower_name == "automations.yaml" and isinstance(data, list):
+        hint = _path_component_hint(path)
+
+        # Root lists are common in automations include directories.
+        if isinstance(data, list):
             for index, entry in enumerate(data):
-                if isinstance(entry, dict):
-                    key = str(entry.get("id") or entry.get("alias") or index)
-                    components.append(_component_record("automation", key, entry, path, index))
-            continue
-        if lower_name == "scripts.yaml" and isinstance(data, dict):
-            for key, entry in data.items():
-                components.append(_component_record("script", str(key), entry, path))
-            continue
-        if lower_name == "scenes.yaml" and isinstance(data, list):
-            for index, entry in enumerate(data):
-                if isinstance(entry, dict):
+                if not isinstance(entry, dict):
+                    continue
+                if lower_name == "scenes.yaml":
                     key = str(entry.get("id") or entry.get("name") or index)
                     components.append(_component_record("scene", key, entry, path, index))
+                elif lower_name == "automations.yaml":
+                    key = str(entry.get("id") or entry.get("alias") or index)
+                    components.append(_component_record("automation", key, entry, path, index))
+                else:
+                    _append_inferred_component(components, entry, path, str(index), index, hint)
             continue
+
         if not isinstance(data, dict):
             continue
+
+        # A single included automation/script may itself be the root mapping.
+        # Do not use the path hint here: a scripts directory commonly contains
+        # a mapping of multiple named scripts rather than one script body.
+        if _append_inferred_component(components, data, path, Path(path).stem, 0, ""):
+            continue
+
+        handled_keys: set[str] = set()
         for raw_domain, payload in data.items():
             domain = str(raw_domain)
             if domain == "automation":
-                entries = payload if isinstance(payload, list) else list(payload.values()) if isinstance(payload, dict) else []
-                for index, entry in enumerate(entries):
+                handled_keys.add(domain)
+                if isinstance(payload, list):
+                    entries = [(str(index), entry, index) for index, entry in enumerate(payload)]
+                elif isinstance(payload, dict):
+                    entries = [(str(key), entry, index) for index, (key, entry) in enumerate(payload.items())]
+                else:
+                    entries = []
+                for key, entry, index in entries:
                     if isinstance(entry, dict):
-                        key = str(entry.get("id") or entry.get("alias") or index)
-                        components.append(_component_record("automation", key, entry, path, index))
-            elif domain in {"script"} | HELPER_DOMAINS:
+                        component_key = str(entry.get("id") or entry.get("alias") or key or index)
+                        components.append(_component_record("automation", component_key, entry, path, index))
+            elif domain == "script":
+                handled_keys.add(domain)
                 if isinstance(payload, dict):
-                    for key, entry in payload.items():
-                        components.append(_component_record(domain, str(key), entry, path))
+                    for index, (key, entry) in enumerate(payload.items()):
+                        components.append(_component_record("script", str(key), entry, path, index))
+            elif domain in HELPER_DOMAINS:
+                handled_keys.add(domain)
+                if isinstance(payload, dict):
+                    for index, (key, entry) in enumerate(payload.items()):
+                        components.append(_component_record(domain, str(key), entry, path, index))
             elif domain == "scene":
-                entries = payload if isinstance(payload, list) else list(payload.values()) if isinstance(payload, dict) else []
-                for index, entry in enumerate(entries):
+                handled_keys.add(domain)
+                if isinstance(payload, list):
+                    entries = [(str(index), entry, index) for index, entry in enumerate(payload)]
+                elif isinstance(payload, dict):
+                    entries = [(str(key), entry, index) for index, (key, entry) in enumerate(payload.items())]
+                else:
+                    entries = []
+                for key, entry, index in entries:
                     if isinstance(entry, dict):
-                        key = str(entry.get("id") or entry.get("name") or index)
-                        components.append(_component_record("scene", key, entry, path, index))
+                        component_key = str(entry.get("id") or entry.get("name") or key or index)
+                        components.append(_component_record("scene", component_key, entry, path, index))
             elif domain == "template" and isinstance(payload, list):
+                handled_keys.add(domain)
                 for index, entry in enumerate(payload):
                     if isinstance(entry, dict):
                         components.append(_component_record("template", str(index), entry, path, index))
+
+        # Generic include files may be mappings keyed by an automation/script ID.
+        for index, (key, entry) in enumerate(data.items()):
+            if str(key) in handled_keys or not isinstance(entry, dict):
+                continue
+            _append_inferred_component(components, entry, path, str(key), index, hint)
+
     unique: dict[str, dict[str, Any]] = {}
     for component in components:
         unique[str(component["component_id"])] = component
-    return list(unique.values()), warnings
+    return list(unique.values()), list(dict.fromkeys(warnings))
 
 
 def _count_dashboard_cards(value: Any) -> int:

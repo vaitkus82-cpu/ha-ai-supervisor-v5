@@ -1,8 +1,8 @@
-# AI Supervisor V5 Connector 5.0.0-alpha5
+# AI Supervisor V5 Connector 5.0.0-alpha6
 
-## What Alpha5 adds
+## What Alpha6 adds
 
-Alpha5 builds a process map locally before the AI model is used. The map follows:
+Alpha6 builds a process map locally before the AI model is used. The map follows:
 
 ```text
 device -> entities -> YAML components -> supporting helpers -> dashboards -> files
@@ -16,7 +16,7 @@ Use **Rasti proceso žemėlapį** to inspect what the system found before sendin
 
 ## Write policy
 
-Alpha5 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum of three files can be included in one transaction. Every transaction requires:
+Alpha6 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum of three files can be included in one transaction. Every transaction requires:
 
 1. writes enabled in App Configuration;
 2. an explicit confirmation phrase;

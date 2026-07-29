@@ -1,14 +1,14 @@
-# AI Supervisor V5 Connector 5.0.0-alpha5
+# AI Supervisor V5 Connector 5.0.0-alpha6
 
 The Connector is the guarded Home Assistant half of AI Supervisor V5.
 
-Alpha5:
+Alpha6:
 
 - reads Home Assistant files and live registries;
-- creates a local structural catalogue of automations, scripts, helpers, scenes and templates;
+- recognises automations and scripts in arbitrary `!include` files;
+- creates an exact entity-to-component reverse index;
 - reads Lovelace dashboard references without exposing `.storage`;
-- pairs with the Windows Engine on the trusted local network;
-- sends the Engine enough structure to build a full process dependency map;
-- displays the process map before AI analysis;
+- treats dashboards as confirmation only, never as a source for new devices;
+- separates primary process entities, dependencies and same-device context;
 - keeps package writes disabled by default;
 - requires backup, explicit confirmation, configuration validation and rollback for any write.

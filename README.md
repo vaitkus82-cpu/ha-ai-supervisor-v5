@@ -2,12 +2,13 @@
 
 Home Assistant side of the split AI Supervisor V5 architecture.
 
-Version **5.0.0-alpha5** adds an autonomous process-discovery layer. The Connector builds a redacted Home Assistant snapshot, generates a structural catalogue of automations, scripts, helpers, scenes and templates, reads Lovelace dashboard references through the Home Assistant WebSocket API, and transfers the result to the paired Windows Engine.
+Version **5.0.0-alpha6** replaces broad graph expansion with a precise reverse index. The Connector recognises package files and arbitrary Home Assistant include files, including root-list automations and root-mapping scripts. The Windows Engine starts from exact process entities and follows only real YAML dependencies.
 
 The Windows Engine then builds a dependency graph:
 
 ```text
-physical device -> entities -> automations/scripts/helpers -> dashboards -> files
+exact process entity -> automation/script/helper -> file
+                         -> dashboard confirmation only
 ```
 
 ## Safety

@@ -1,19 +1,31 @@
-# AI Supervisor V5 Alpha5 atnaujinimas – žingsnis po žingsnio
+# AI Supervisor V5 Alpha6 atnaujinimas – žingsnis po žingsnio
 
-Šiame etape atnaujinamos abi dalys:
+Atnaujinamos abi sistemos dalys:
 
-- darbo mini PC: **AI Supervisor V5 Windows Engine 5.0.0-alpha5**;
-- Home Assistant Green: **AI Supervisor V5 Connector 5.0.0-alpha5**.
+- darbo mini PC – **AI Supervisor V5 Windows Engine 5.0.0-alpha6**;
+- Home Assistant Green – **AI Supervisor V5 Connector 5.0.0-alpha6**.
 
-Alpha5 pagrindinė naujovė – autonominis proceso žemėlapis. Sistema prieš kreipdamasi į AI pati susieja fizinius įrenginius, entities, automatikas, skriptus, helperius, dashboardo nuorodas ir failus.
+## Ką taiso Alpha6
 
-Rašymas į Home Assistant pagal nutylėjimą lieka išjungtas.
+Alpha5 proceso žemėlapį per daug išplėsdavo per dashboardą, todėl į užuolaidų procesą pateko nesusijęs robotas „Valentina“. Be to, nebuvo rasti į atskirus `!include` failus iškelti automatikų ir skriptų blokai.
+
+Alpha6:
+
+- užuolaidų paiešką pradeda tik nuo realiai pavadinimą atitinkančių `cover.*` entities;
+- to paties įrenginio `select.*` ir kitos entities rodomos tik kaip kontekstas, bet neplečia proceso;
+- dashboardus naudoja tik kaip jau rasto proceso patvirtinimą;
+- dashboardas negali pridėti naujo fizinio įrenginio;
+- atpažįsta automatikas, esančias savavališkai pavadintuose šakniniuose YAML sąrašuose;
+- atpažįsta skriptus, esančius savavališkai pavadintuose šakniniuose YAML žemėlapiuose;
+- pagal tikslias entity nuorodas sudaro grandinę `entity → automatika → skriptas → helperis → failas`;
+- prie kiekvieno komponento parodo, kodėl jis įtrauktas;
+- palieka rašymą į Home Assistant išjungtą.
 
 ---
 
 ## 1 dalis. Atnaujinti Windows Engine
 
-1. Atsisiųskite `ai-supervisor-v5-windows-engine-alpha5.zip`.
+1. Atsisiųskite `ai-supervisor-v5-windows-engine-alpha6.zip`.
 2. Paspauskite dešiniu pelės mygtuku ir pasirinkite **Extract All / Išskleisti viską**.
 3. Atidarykite išskleistą aplanką.
 4. Dukart paspauskite:
@@ -33,18 +45,18 @@ http://127.0.0.1:8765
 8. Patikrinkite, kad rodoma:
 
 ```text
-Engine 5.0.0-alpha5
+Engine 5.0.0-alpha6
 OpenAI: paruošta
 Connector: susietas
 ```
 
-Esamas OpenAI raktas, poravimo duomenys ir pasiūlymų istorija saugomi `C:\ProgramData\AI Supervisor V5`, todėl atnaujinimas jų neturėtų ištrinti.
+OpenAI raktas, poravimas ir pasiūlymų istorija saugomi `C:\ProgramData\AI Supervisor V5`, todėl atnaujinimas jų neturėtų ištrinti.
 
 ---
 
-## 2 dalis. Įkelti Alpha5 Connector į GitHub
+## 2 dalis. Įkelti Alpha6 Connector į GitHub
 
-1. Atsisiųskite `ha-ai-supervisor-v5-connector-alpha5.zip`.
+1. Atsisiųskite `ha-ai-supervisor-v5-connector-alpha6.zip`.
 2. Išskleiskite ZIP.
 3. Atidarykite vidinį aplanką:
 
@@ -52,14 +64,15 @@ Esamas OpenAI raktas, poravimo duomenys ir pasiūlymų istorija saugomi `C:\Prog
 ha-ai-supervisor-v5
 ```
 
-4. GitHub atidarykite esamą saugyklą:
+4. GitHub atidarykite:
 
 ```text
 https://github.com/vaitkus82-cpu/ha-ai-supervisor-v5
 ```
 
 5. Pasirinkite **Add file → Upload files**.
-6. Įkelkite visą vidinio `ha-ai-supervisor-v5` aplanko turinį. GitHub pagrindiniame lygyje turi likti:
+6. Įkelkite visą vidinio `ha-ai-supervisor-v5` aplanko turinį.
+7. GitHub pagrindiniame lygyje turi likti:
 
 ```text
 repository.yaml
@@ -69,13 +82,13 @@ ai_supervisor_connector/
 tests/
 ```
 
-7. Commit pavadinimas:
+8. Commit pavadinimas:
 
 ```text
-Upgrade V5 to alpha5 autonomous process maps
+Upgrade V5 to alpha6 precise reverse index
 ```
 
-8. Paspauskite **Commit changes**.
+9. Paspauskite **Commit changes**.
 
 ---
 
@@ -87,7 +100,7 @@ Upgrade V5 to alpha5 autonomous process maps
 4. Atnaujinkite:
 
 ```text
-5.0.0-alpha4 → 5.0.0-alpha5
+5.0.0-alpha5 → 5.0.0-alpha6
 ```
 
 5. Po atnaujinimo patikrinkite:
@@ -100,18 +113,19 @@ Upgrade V5 to alpha5 autonomous process maps
 
 ---
 
-## 4 dalis. Persiųsti naują Home Assistant indeksą
+## 4 dalis. Persiųsti naują indeksą
 
 1. Kairiajame meniu atidarykite **AI Supervisor V5**.
 2. Paspauskite **Nuskaityti ir perduoti**.
-3. Po nuskaitymo patikrinkite, kad rodoma daugiau nei nulis:
+3. Patikrinkite, kad daugiau nei nulis rodoma prie:
    - failų;
    - gyvų entities;
-   - entity registro įrašų;
+   - entity registro;
    - įrenginių;
-   - struktūrinių komponentų.
-4. Dashboardų skaičius taip pat turėtų būti didesnis už nulį. Jeigu Home Assistant negrąžina Lovelace duomenų per API, sistema turi parodyti perspėjimą, bet failų ir procesų nuskaitymas vis tiek veiks.
-5. Paspauskite **Patikrinti HA konfigūraciją**. Laukiamas rezultatas:
+   - komponentų;
+   - dashboardų.
+4. Paspauskite **Patikrinti HA konfigūraciją**.
+5. Laukiamas rezultatas:
 
 ```text
 Home Assistant konfigūracija tinkama.
@@ -119,33 +133,16 @@ Home Assistant konfigūracija tinkama.
 
 ---
 
-## 5 dalis. Patikrinti autonominį proceso žemėlapį
+## 5 dalis. Patikrinti užuolaidų proceso žemėlapį
 
-Užduoties lauke įrašykite:
+1. Užduoties lauke įrašykite:
 
 ```text
 užuolaidų procesas
 ```
 
-Paspauskite:
-
-```text
-Rasti proceso žemėlapį
-```
-
-Alpha5 turi parodyti:
-
-- fizinius užuolaidų įrenginius;
-- visas jų `cover.*` entities;
-- susijusias automatizacijas;
-- skriptus;
-- helperius;
-- dashboardo nuorodas;
-- susijusius YAML failus;
-- neišspręstas nuorodas;
-- ryšių grandinę tarp šių dalių.
-
-Tikėtinos užuolaidų entities:
+2. Paspauskite **Rasti proceso žemėlapį**.
+3. Teisingame rezultate turi būti:
 
 ```text
 cover.miegamasis_curtain
@@ -153,20 +150,26 @@ cover.svetaine_kaire_curtain
 cover.svetaine_terasa_curtain
 ```
 
+4. Turi būti daugiau nei nulis prie:
+   - automatikų;
+   - skriptų;
+   - helperių;
+   - susijusių failų.
+5. „Valentina“, `vacuum.*` ir jos 100 entities neturi patekti į žemėlapį vien dėl to, kad yra tame pačiame dashboarde.
+6. Dashboardo skiltyje turi būti parašyta, kad jis tik patvirtina procesą ir jo neplečia.
+
+Kol šis testas nepatvirtintas, nespauskite **Analizuoti ir parengti pasiūlymą**.
+
 ---
 
-## 6 dalis. Pirmoji Alpha5 AI analizė
+## 6 dalis. Pirmoji Alpha6 skaitymo analizė
 
-Į užduoties lauką įklijuokite:
+Kai proceso žemėlapis teisingas, įrašykite:
 
 ```text
 Atlik tik skaitymo režimo analizę.
 
-Surask visą užuolaidų procesą nuo fizinių įrenginių iki dashboardo:
-cover entities, automatizacijas, skriptus, helperius, įrenginius, zonas,
-dashboardo korteles ir visus susijusius failus.
-
-Sudaryk proceso žemėlapį ir patikrink:
+Išanalizuok pateiktą užuolaidų proceso žemėlapį. Patikrink:
 - ar vieną fizinę užuolaidą valdo daugiau nei vienas procesas;
 - ar rankinis prioritetas tikrinamas visose vykdymo šakose;
 - ar nėra dubliuotų komandų;
@@ -181,14 +184,13 @@ Paspauskite **Analizuoti ir parengti pasiūlymą**.
 
 Teisingas saugos rezultatas:
 
-- pasiūlyme matomas proceso žemėlapis;
-- AI nebeturi teigti, kad užuolaidų dalys nerastos, jeigu jos yra žemėlapyje;
-- pakeitimų failų sąrašas lieka tuščias;
-- pasiūlymas pažymimas kaip skaitymo režimo arba užblokuotas taikymui;
-- `Rašymas: išjungtas` lieka nepakeistas.
+- pakeitimų failų sąrašas tuščias;
+- pasiūlymas užblokuotas taikymui arba pažymėtas skaitymo režimu;
+- `Rašymas: išjungtas` lieka nepakeistas;
+- Home Assistant failai nepakeičiami.
 
 ---
 
-## Svarbi Alpha5 riba
+## Alpha6 saugos riba
 
-Alpha5 pagerina autonominį proceso radimą, bet dar nėra leidimas nekontroliuojamai keisti visą Home Assistant projektą. Net įjungus rašymą, dabartinė saugos riba leidžia keisti tik aiškiai patvirtintus YAML failus po `/config/packages/`, po atsarginės kopijos, YAML patikros ir Home Assistant konfigūracijos patikros. Home Assistant automatiškai neperkraunamas.
+Alpha6 dar nėra leidimas autonomiškai keisti visą Home Assistant projektą. Net įjungus rašymą, esama saugos politika leidžia keisti tik aiškiai patvirtintus YAML failus po `/config/packages/`, po atsarginės kopijos, YAML patikros ir Home Assistant konfigūracijos patikros. Home Assistant automatiškai neperkraunamas.
