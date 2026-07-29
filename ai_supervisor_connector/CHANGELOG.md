@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.0.0-alpha4
+
+- Counts unique problems separately from repeated mentions.
+- Ignores Python, JavaScript and documentation files during entity-reference validation.
+- Treats only explicit YAML entity fields and supported template calls as missing-entity candidates.
+- Detects duplicate control only from actual service/action targets, not ordinary references.
+- Shows up to 20 concrete problem examples with confidence, severity and affected files.
+- Sends only process-relevant YAML files and entities to the AI model.
+- Keeps Home Assistant writes disabled by default.
+
 ## 5.0.0-alpha3
 
 - Added Home Assistant WebSocket inventory collection for current states.

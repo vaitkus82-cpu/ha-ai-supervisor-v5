@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha3"
+APP_VERSION = "5.0.0-alpha4"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -573,6 +573,20 @@ def collect_home_assistant_inventory() -> dict[str, Any]:
     }
 
 
+def file_kind(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        return "home_assistant_yaml"
+    if suffix == ".json":
+        return "json"
+    if suffix in {".py", ".js"}:
+        return "source_code"
+    if suffix in {".md", ".txt"}:
+        return "documentation"
+    return "text"
+
+
+
 def build_snapshot() -> dict[str, Any]:
     options = load_options()
     limit = options["max_snapshot_mb"] * 1024 * 1024
@@ -603,7 +617,7 @@ def build_snapshot() -> dict[str, Any]:
                 "size": size,
                 "sha256": sha256_text(text),
                 "content": clean,
-                "entities": sorted(set(ENTITY_RE.findall(clean)))[:500],
+                "kind": file_kind(path),
             }
         )
         total += len(clean.encode("utf-8"))
@@ -735,7 +749,7 @@ def normalise_target_path(value: str) -> tuple[str, Path]:
     except ValueError as exc:
         raise ValueError("Change path escapes Home Assistant configuration") from exc
     if not relative.startswith(ALLOWED_WRITE_ROOT):
-        raise ValueError("Alpha1 can write only files inside packages/")
+        raise ValueError("This release can write only files inside packages/")
     if candidate.suffix.lower() not in ALLOWED_WRITE_SUFFIXES:
         raise ValueError("Only .yaml and .yml files are writable")
     if candidate.name.lower() == "secrets.yaml" or ".storage" in candidate.parts:
@@ -768,7 +782,7 @@ def validate_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
         errors.append("Engine did not provide file changes")
         changes = []
     if len(changes) > MAX_CHANGES:
-        errors.append(f"Alpha1 allows at most {MAX_CHANGES} files per transaction")
+        errors.append(f"This release allows at most {MAX_CHANGES} files per transaction")
     for item in changes[:MAX_CHANGES]:
         if not isinstance(item, dict):
             errors.append("Invalid change entry")

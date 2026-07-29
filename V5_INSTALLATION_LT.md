@@ -1,4 +1,4 @@
-# AI Supervisor V5.0 Alpha1 diegimas
+# AI Supervisor V5.0 Alpha4 diegimas
 
 Šis leidimas turi dvi atskiras dalis:
 
@@ -7,7 +7,7 @@
 
 Abi dalys šiuo metu turi būti tame pačiame patikimame vietiniame tinkle.
 
-## Ką jau moka Alpha1
+## Ką jau moka Alpha4
 
 - automatiškai nuskaityti Home Assistant YAML, Python, JavaScript ir tekstinius konfigūracijos failus;
 - neperduoti `secrets.yaml`, `.storage`, duomenų bazės, logų ir atsarginių kopijų;
@@ -23,7 +23,7 @@ Abi dalys šiuo metu turi būti tame pačiame patikimame vietiniame tinkle.
 - nepavykus patikrai automatiškai atkurti visus keistus failus;
 - niekada automatiškai neperkrauti Home Assistant.
 
-## Svarbi Alpha1 riba
+## Svarbi Alpha4 riba
 
 Tai pirmas realiai veikiantis dviejų dalių leidimas. Jis dar nerašo į `automations.yaml`, `scripts.yaml`, `configuration.yaml` ar `.storage`. Rašymo sritis sąmoningai apribota iki `packages/*.yaml` ir pagal nutylėjimą išjungta.
 
@@ -33,7 +33,7 @@ Tai pirmas realiai veikiantis dviejų dalių leidimas. Jis dar nerašo į `autom
 
 ## 1 žingsnis. Išskleisti Windows Engine ZIP
 
-1. Atsisiųskite `ai-supervisor-v5-windows-engine-alpha1.zip`.
+1. Atsisiųskite `ai-supervisor-v5-windows-engine-alpha4.zip`.
 2. Paspauskite dešiniu pelės mygtuku.
 3. Pasirinkite **Extract All / Išskleisti viską**.
 4. Atidarykite išskleistą aplanką.
@@ -71,7 +71,7 @@ http://127.0.0.1:8765
 
 Lange turi būti rodoma:
 
-- Engine versija `5.0.0-alpha1`;
+- Engine versija `5.0.0-alpha4`;
 - mini PC vietinis IP adresas;
 - šešių skaitmenų poravimo kodas;
 - OpenAI būsena.
@@ -112,7 +112,7 @@ Maršrutizatoriuje 8765 prievado neatidarykite.
 Atsisiųskite ir išskleiskite:
 
 ```text
-ha-ai-supervisor-v5.0-alpha1.zip
+ha-ai-supervisor-v5.0-alpha4.zip
 ```
 
 Pakete yra esamas V4.3 ir naujas aplankas:
@@ -133,7 +133,7 @@ Esamo `ai_supervisor` aplanko neištrinkite. V4.3 kol kas paliekamas kaip atsarg
 Rekomenduojamas commit pavadinimas:
 
 ```text
-Add AI Supervisor V5 split alpha1
+Add AI Supervisor V5 split alpha4
 ```
 
 ## 7 žingsnis. Atnaujinti Home Assistant programėlių sąrašą

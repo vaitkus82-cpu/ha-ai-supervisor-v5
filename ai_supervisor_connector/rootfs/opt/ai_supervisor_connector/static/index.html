@@ -63,10 +63,16 @@
     </section>
 
     <section class="card wide">
+      <h2>Problemų santrauka</h2>
+      <div class="muted">Rodomos unikalios problemos. Paminėjimų skaičius nėra atskirų gedimų skaičius.</div>
+      <div id="problemOverview" style="margin-top:10px" class="muted">Pirmiausia nuskaityk Home Assistant.</div>
+    </section>
+
+    <section class="card wide">
       <h2>3. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha3 gali pats rasti procesą, naudoti gyvas būsenas ir HA registrus bei generuoti peržiūrimus pakeitimus. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha4 filtruoja tikras YAML nuorodas, atskiria unikalias problemas nuo paminėjimų ir AI perduoda tik konkrečiam procesui aktualius failus. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -100,6 +106,18 @@ async function api(path, options={}) {
 }
 function message(id, text, type='success') { $(id).innerHTML = `<div class="${type}">${esc(text)}</div>`; }
 function busy(button, on, text='Vykdoma...') { if (!button) return; if (on) { button.dataset.old=button.textContent; button.textContent=text; button.disabled=true; } else { button.textContent=button.dataset.old || button.textContent; button.disabled=false; } }
+function renderProblemOverview(source={}) {
+  const pc=source.problem_counts||{};
+  const refs=source.reference_stats||{};
+  const health=source.state_health||{};
+  const examples=Array.isArray(source.problem_examples)?source.problem_examples:[];
+  const exampleHtml=examples.length?examples.map(item=>{
+    const subject=item.entity_id||item.id||item.type||'problema';
+    const files=(item.files||[]).join(', ');
+    return `<details><summary><span class="${item.category==='confirmed'?'bad':(item.category==='likely_conflict'?'warn':'muted')}">${esc(item.category||'-')}</span> · ${esc(subject)} · ${esc(item.severity||'-')}</summary><div class="muted">${esc(item.message||'')}</div>${files?`<div class="muted">Failai: ${esc(files)}</div>`:''}<div class="muted">Paminėjimų: ${esc(item.occurrences||1)} · pasitikėjimas: ${esc(item.confidence??'-')}</div></details>`;
+  }).join(''):'<div class="muted">Konkrečių problemų pavyzdžių nėra.</div>';
+  $('problemOverview').innerHTML=`<div class="status"><span class="pill bad">Patvirtintos: ${esc(pc.confirmed||0)}</span><span class="pill warn">Galimi konfliktai: ${esc(pc.likely_conflict||0)}</span><span class="pill">Nepatikrintos: ${esc(pc.unverified||0)}</span><span class="pill">Unikalios iš viso: ${esc(pc.total||0)}</span><span class="pill">Paminėjimai: ${esc(pc.occurrence_total||0)}</span></div><div class="muted" style="margin-top:10px">YAML failų tikrinta: <b>${esc(refs.yaml_files_scanned||0)}</b>, ne YAML failų ignoruota: <b>${esc(refs.non_yaml_files_ignored_for_entity_detection||0)}</b>, valdymo taikinių: <b>${esc(refs.unique_control_targets||0)}</b>. Neprieinamų/unknown būsenų iš viso: <b>${esc(health.unavailable_or_unknown_total||0)}</b>, iš jų valdymo taikinių: <b>${esc(health.unavailable_or_unknown_control_targets||0)}</b>.</div><h3>Pirmi konkretūs pavyzdžiai</h3>${exampleHtml}`;
+}
 async function loadStatus() {
   try {
     const s = await api('api/status');
@@ -115,6 +133,7 @@ async function loadStatus() {
       `<span class="pill">Zonos: ${esc(s.last_snapshot.area_registry_count)}</span>`,
       `<span class="pill ${s.write_policy.enabled?'warn':''}">Rašymas: ${s.write_policy.enabled?'įjungtas':'išjungtas'}</span>`
     ].join('');
+    renderProblemOverview(s.engine||{});
   } catch (e) { $('topStatus').innerHTML = `<span class="pill bad">Klaida: ${esc(e.message)}</span>`; }
 }
 async function pairEngine() {
@@ -130,9 +149,10 @@ async function syncSnapshot() {
     const r=await api('api/sync',{method:'POST',body:'{}'});
     const warnings=(r.api_warnings||[]).length ? ` Įspėjimai: ${(r.api_warnings||[]).join(' | ')}` : '';
     const pc=r.problem_counts||{};
-    const problemText=`patvirtintų: ${pc.confirmed ?? 0}, galimų konfliktų: ${pc.likely_conflict ?? 0}, nepatikrintų: ${pc.unverified ?? 0}`;
+    const problemText=`unikalių patvirtintų: ${pc.confirmed ?? 0}, galimų konfliktų: ${pc.likely_conflict ?? 0}, nepatikrintų: ${pc.unverified ?? 0}, paminėjimų: ${pc.occurrence_total ?? 0}`;
     const inventory=`gyvų entities: ${r.state_count ?? 0}, registro entities: ${r.entity_registry_count ?? 0}, įrenginių: ${r.device_registry_count ?? 0}, zonų: ${r.area_registry_count ?? 0}`;
     message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, ${inventory}. Problemos — ${problemText}.${warnings}`, (r.api_warnings||[]).length ? 'notice' : 'success');
+    renderProblemOverview(r);
     await loadAll();
   }
   catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }

@@ -8,7 +8,7 @@ The Home Assistant Connector is the only component that can write files. It inde
 
 ## Network
 
-Alpha1 is intended for a trusted local network. The Windows installer opens TCP port 8765 only for the Windows **Private** firewall profile and `LocalSubnet`. No router port forwarding is required or supported.
+Alpha4 is intended for a trusted local network. The Windows installer opens TCP port 8765 only for the Windows **Private** firewall profile and `LocalSubnet`. No router port forwarding is required or supported.
 
 ## Pairing
 
@@ -39,6 +39,6 @@ Known secret patterns and `!secret` references are redacted before transfer.
 10. Never restart Home Assistant automatically.
 
 
-## Alpha3 inventory
+## Alpha4 inventory
 
 The Connector uses the Home Assistant WebSocket proxy to collect current states and compact entity, device and area registry records. Hardware identifiers, network connections, serial numbers and credentials are not included. The Engine classifies findings as confirmed, likely conflicts or unverified.
