@@ -1,39 +1,17 @@
 # Changelog
 
+## 5.0.0-alpha5
+
+- Added a structural Home Assistant component catalogue generated locally with PyYAML.
+- Catalogues automations, scripts, scenes, templates and helper definitions without sending `.storage` files.
+- Added read-only Lovelace dashboard inventory through the Home Assistant WebSocket API.
+- Sends only dashboard titles, view paths, card counts and referenced entity IDs to the Windows Engine.
+- Added a dedicated process-map button and process-map display in the Home Assistant UI.
+- Added component and dashboard counts to snapshot/status information.
+- Added the `/api/process-map` bridge to the paired Windows Engine.
+- Preserved the disabled-by-default package-only write policy, backup, validation and rollback controls.
+
 ## 5.0.0-alpha4
 
-- Counts unique problems separately from repeated mentions.
-- Ignores Python, JavaScript and documentation files during entity-reference validation.
-- Treats only explicit YAML entity fields and supported template calls as missing-entity candidates.
-- Detects duplicate control only from actual service/action targets, not ordinary references.
-- Shows up to 20 concrete problem examples with confidence, severity and affected files.
-- Sends only process-relevant YAML files and entities to the AI model.
-- Keeps Home Assistant writes disabled by default.
-
-## 5.0.0-alpha3
-
-- Added Home Assistant WebSocket inventory collection for current states.
-- Added compact entity, device and area registry snapshots.
-- Excluded device identifiers, connections, serial numbers and credentials from snapshots.
-- Normalised successful Home Assistant configuration checks to a clear `valid` result.
-- Added inventory completeness and registry counts to status and UI.
-- Added problem confidence categories for the Alpha3 Windows Engine.
-
-## 5.0.0-alpha2
-
-- Configuration validation now uses the Supervisor `/core/check` endpoint with a Core REST fallback.
-- Snapshot creation continues in file-only mode if the Home Assistant states API fails.
-- API errors now identify the exact method and endpoint.
-- Updated Supervisor role to `manager`, required for reliable system checks and guarded V5 operations.
-- Added snapshot API warnings to status and UI.
-
-
-## 5.0.0-alpha1
-
-- Added split Home Assistant Connector and Windows Engine architecture.
-- Added one-time pairing with a local Windows Engine.
-- Added redacted Home Assistant project snapshots.
-- Added external process indexing and structured OpenAI proposals.
-- Added guarded multi-file YAML transactions under `packages/`.
-- Added backup, source-hash validation, configuration check and automatic rollback.
-- Automatic Home Assistant restart remains disabled.
+- Added filtered YAML problem detection and confidence categories.
+- Added unique issue and occurrence counts.

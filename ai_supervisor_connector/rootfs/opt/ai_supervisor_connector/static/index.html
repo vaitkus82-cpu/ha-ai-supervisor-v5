@@ -69,10 +69,17 @@
     </section>
 
     <section class="card wide">
-      <h2>3. Užduotis AI Supervisor</h2>
+      <h2>3. Proceso žemėlapis</h2>
+      <div class="muted">Alpha5 pats pereina grandinę: įrenginys → entities → automatikos → skriptai → helperiai → dashboardai → failai.</div>
+      <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
+      <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
+    </section>
+
+    <section class="card wide">
+      <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha4 filtruoja tikras YAML nuorodas, atskiria unikalias problemas nuo paminėjimų ir AI perduoda tik konkrečiam procesui aktualius failus. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha5 prieš AI užklausą sukuria vietinį proceso žemėlapį iš įrenginių, registrų, YAML komponentų ir Lovelace dashboardų. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -131,6 +138,8 @@ async function loadStatus() {
       `<span class="pill ${s.last_snapshot.entity_validation==='complete'?'ok':(s.last_snapshot.entity_validation==='partial'?'warn':'bad')}">Entity registras: ${esc(s.last_snapshot.entity_registry_count)}</span>`,
       `<span class="pill">Įrenginiai: ${esc(s.last_snapshot.device_registry_count)}</span>`,
       `<span class="pill">Zonos: ${esc(s.last_snapshot.area_registry_count)}</span>`,
+      `<span class="pill">Komponentai: ${esc(s.last_snapshot.component_count||0)}</span>`,
+      `<span class="pill">Dashboardai: ${esc(s.last_snapshot.dashboard_count||0)}</span>`,
       `<span class="pill ${s.write_policy.enabled?'warn':''}">Rašymas: ${s.write_policy.enabled?'įjungtas':'išjungtas'}</span>`
     ].join('');
     renderProblemOverview(s.engine||{});
@@ -150,7 +159,7 @@ async function syncSnapshot() {
     const warnings=(r.api_warnings||[]).length ? ` Įspėjimai: ${(r.api_warnings||[]).join(' | ')}` : '';
     const pc=r.problem_counts||{};
     const problemText=`unikalių patvirtintų: ${pc.confirmed ?? 0}, galimų konfliktų: ${pc.likely_conflict ?? 0}, nepatikrintų: ${pc.unverified ?? 0}, paminėjimų: ${pc.occurrence_total ?? 0}`;
-    const inventory=`gyvų entities: ${r.state_count ?? 0}, registro entities: ${r.entity_registry_count ?? 0}, įrenginių: ${r.device_registry_count ?? 0}, zonų: ${r.area_registry_count ?? 0}`;
+    const inventory=`gyvų entities: ${r.state_count ?? 0}, registro entities: ${r.entity_registry_count ?? 0}, įrenginių: ${r.device_registry_count ?? 0}, zonų: ${r.area_registry_count ?? 0}, komponentų: ${r.component_count ?? 0}, dashboardų: ${r.dashboard_count ?? 0}`;
     message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, ${inventory}. Problemos — ${problemText}.${warnings}`, (r.api_warnings||[]).length ? 'notice' : 'success');
     renderProblemOverview(r);
     await loadAll();
@@ -166,21 +175,42 @@ async function checkConfig() {
   }
   catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }
 }
+function renderProcessMap(map={}) {
+  const summary=map.summary||{};
+  const entities=Array.isArray(map.entities)?map.entities:[];
+  const components=Array.isArray(map.components)?map.components:[];
+  const devices=Array.isArray(map.devices)?map.devices:[];
+  const dashboards=Array.isArray(map.dashboards)?map.dashboards:[];
+  const files=Array.isArray(map.files)?map.files:[];
+  const unresolved=Array.isArray(map.unresolved_entities)?map.unresolved_entities:[];
+  const deviceHtml=devices.slice(0,20).map(d=>`<details><summary>${esc(d.name||d.device_id||'Įrenginys')} · ${esc((d.entities||[]).length)} entities</summary><div class="muted">${esc([d.manufacturer,d.model,d.area_name].filter(Boolean).join(' · '))}</div><div class="muted">${esc((d.entities||[]).join(', '))}</div></details>`).join('');
+  const componentHtml=components.slice(0,40).map(c=>`<details><summary>${esc(c.kind||'component')} · ${esc(c.name||c.key||c.component_id)}</summary><div class="muted">Failas: ${esc(c.file||'-')}</div><div class="muted">Valdo: ${esc((c.control_targets||[]).join(', ')||'-')}</div><div class="muted">Naudoja: ${esc((c.references||[]).slice(0,40).join(', ')||'-')}</div></details>`).join('');
+  const dashboardHtml=dashboards.slice(0,20).map(d=>`<details><summary>${esc(d.title||d.dashboard_id||'Dashboard')} · ${esc((d.matched_entities||[]).length)} susijusių entities</summary><div class="muted">${esc((d.matched_entities||[]).join(', '))}</div></details>`).join('');
+  $('processMap').innerHTML=`<div class="status"><span class="pill">Įrenginiai: ${esc(summary.devices||0)}</span><span class="pill">Entities: ${esc(summary.entities||0)}</span><span class="pill">Automatikos: ${esc(summary.automations||0)}</span><span class="pill">Skriptai: ${esc(summary.scripts||0)}</span><span class="pill">Helperiai: ${esc(summary.helpers||0)}</span><span class="pill">Dashboardai: ${esc(summary.dashboards||0)}</span><span class="pill">Failai: ${esc(summary.files||0)}</span><span class="pill ${unresolved.length?'warn':'ok'}">Neišspręstos: ${esc(summary.unresolved_entities||0)}</span></div>${deviceHtml?`<h3>Fiziniai įrenginiai</h3>${deviceHtml}`:''}${componentHtml?`<h3>Proceso komponentai</h3>${componentHtml}`:''}${dashboardHtml?`<h3>Dashboardo nuorodos</h3>${dashboardHtml}`:''}${files.length?`<h3>Susiję failai</h3><div class="muted">${esc(files.join(', '))}</div>`:''}${unresolved.length?`<h3>Neišspręstos entity nuorodos</h3><div class="muted">${esc(unresolved.slice(0,100).join(', '))}</div>`:''}`;
+}
+async function findProcessMap() {
+  const b=event.currentTarget; busy(b,true,'Ieškoma...');
+  try { const r=await api('api/process-map',{method:'POST',body:JSON.stringify({query:$('query').value})}); renderProcessMap(r); }
+  catch(e){ $('processMap').innerHTML=`<div class="error">${esc(e.message)}</div>`; } finally { busy(b,false); }
+}
 async function analyse() {
   const b=event.currentTarget; busy(b,true,'AI analizuoja...');
-  try { const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})}); message('analyseResult',`Pasiūlymas parengtas: ${r.proposal_id}. Rizika: ${r.risk_level || '-'}.`); await loadProposals(); }
+  try { const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})}); if(r.process_map) renderProcessMap(r.process_map); message('analyseResult',`Pasiūlymas parengtas: ${r.proposal_id}. Rizika: ${r.risk_level || '-'}.`); await loadProposals(); }
   catch(e){ message('analyseResult',e.message,'error'); } finally { busy(b,false); }
 }
 function proposalHtml(p) {
   const v=p.connector_validation || {}; const valid=!!v.valid; const id=p.proposal_id || '';
   const changes=Array.isArray(p.changes)?p.changes:[];
   const changeHtml=changes.map(c=>`<details><summary>${esc(c.path)} — ${esc(c.reason || '')}</summary><pre>${esc(c.new_content || '')}</pre></details>`).join('');
+  const map=p.process_map||{}; const ms=map.summary||{};
+  const mapHtml=map.summary?`<details><summary>Proceso žemėlapis · ${esc(ms.entities||0)} entities · ${esc(ms.components||0)} komponentų · ${esc(ms.files||0)} failų</summary><div class="muted">Įrenginiai: ${esc(ms.devices||0)}, automatikos: ${esc(ms.automations||0)}, skriptai: ${esc(ms.scripts||0)}, helperiai: ${esc(ms.helpers||0)}, dashboardai: ${esc(ms.dashboards||0)}, neišspręstos nuorodos: ${esc(ms.unresolved_entities||0)}.</div><div class="muted">Failai: ${esc((map.files||[]).join(', '))}</div></details>`:'';
   const errors=(v.errors||[]).map(x=>`<li>${esc(x)}</li>`).join('');
   const confirm=`PATVIRTINU ${id.slice(0,8).toUpperCase()}`;
   return `<div class="proposal">
     <div class="status"><span class="pill">${esc(id)}</span><span class="pill ${valid?'ok':'bad'}">${valid?'Paruošta peržiūrai':'Užblokuota'}</span><span class="pill">Rizika: ${esc(v.connector_risk || p.risk_level || '-')}</span></div>
     <h3>${esc(p.summary || 'Be santraukos')}</h3>
     <div class="muted">${esc((p.problems || []).join(' • '))}</div>
+    ${mapHtml}
     ${errors?`<div class="error"><ul>${errors}</ul></div>`:''}
     ${changeHtml}
     ${p.applied_at?`<div class="success">Pritaikyta ${esc(p.applied_at)}. HA automatiškai neperkrautas.</div>`:(valid?`<label>Patvirtinimas</label><input id="confirm-${esc(id)}" placeholder="${esc(confirm)}"><button class="danger" onclick="applyProposal('${esc(id)}')">Patvirtinti ir įrašyti</button>`:'')}

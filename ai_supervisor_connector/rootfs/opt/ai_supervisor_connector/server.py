@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha4"
+APP_VERSION = "5.0.0-alpha5"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -100,6 +100,15 @@ HIGH_RISK_DOMAINS = {
     "switch",
     "valve",
 }
+CONTROL_DOMAINS = {
+    "alarm_control_panel", "climate", "cover", "fan", "light", "lock",
+    "media_player", "select", "switch", "vacuum", "valve", "water_heater",
+}
+HELPER_DOMAINS = {
+    "counter", "group", "input_boolean", "input_button", "input_datetime",
+    "input_number", "input_select", "input_text", "schedule", "timer",
+}
+COMPONENT_DOMAINS = HELPER_DOMAINS | {"automation", "script", "scene", "template"}
 
 
 class DuplicateYamlKeyError(ValueError):
@@ -511,6 +520,248 @@ def compact_area_registry(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _iter_entity_refs(value: Any) -> set[str]:
+    refs: set[str] = set()
+    if isinstance(value, str):
+        refs.update(ENTITY_RE.findall(value))
+    elif isinstance(value, dict):
+        for child in value.values():
+            refs.update(_iter_entity_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            refs.update(_iter_entity_refs(child))
+    return refs
+
+
+def _component_entity_refs(value: Any) -> set[str]:
+    refs: set[str] = set()
+    if isinstance(value, str):
+        refs.update(ENTITY_RE.findall(value))
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            key_text = str(key)
+            if key_text in {"service", "action"} and isinstance(child, str):
+                # Direct script/scene service calls identify a real component.
+                if re.fullmatch(r"(?:script|scene)\.[a-z0-9_]+", child) and child not in {
+                    "script.turn_on", "script.turn_off", "script.toggle", "script.reload",
+                    "scene.turn_on", "scene.reload", "scene.apply", "scene.create",
+                }:
+                    refs.add(child)
+                continue
+            refs.update(_component_entity_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            refs.update(_component_entity_refs(child))
+    return refs
+
+
+def _iter_named_ids(value: Any, key_name: str) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key) == key_name:
+                if isinstance(child, str):
+                    found.add(child)
+                elif isinstance(child, list):
+                    found.update(str(item) for item in child if isinstance(item, (str, int)))
+            found.update(_iter_named_ids(child, key_name))
+    elif isinstance(value, list):
+        for child in value:
+            found.update(_iter_named_ids(child, key_name))
+    return found
+
+
+def _service_actions(value: Any) -> set[str]:
+    actions: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key) in {"service", "action"} and isinstance(child, str) and re.fullmatch(r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*", child):
+                actions.add(child)
+            actions.update(_service_actions(child))
+    elif isinstance(value, list):
+        for child in value:
+            actions.update(_service_actions(child))
+    return actions
+
+
+def _control_targets(value: Any) -> set[str]:
+    targets: set[str] = set()
+    if isinstance(value, dict):
+        service_value = value.get("service") or value.get("action")
+        service_domain = str(service_value).split(".", 1)[0] if isinstance(service_value, str) and "." in service_value else ""
+        if service_domain in CONTROL_DOMAINS:
+            candidate = value.get("target")
+            if candidate is not None:
+                targets.update(entity for entity in _iter_entity_refs(candidate) if entity.split(".", 1)[0] in CONTROL_DOMAINS)
+            candidate = value.get("entity_id")
+            if candidate is not None:
+                targets.update(entity for entity in _iter_entity_refs(candidate) if entity.split(".", 1)[0] in CONTROL_DOMAINS)
+            data = value.get("data")
+            if data is not None:
+                targets.update(entity for entity in _iter_entity_refs(data) if entity.split(".", 1)[0] in CONTROL_DOMAINS)
+        for child in value.values():
+            targets.update(_control_targets(child))
+    elif isinstance(value, list):
+        for child in value:
+            targets.update(_control_targets(child))
+    return targets
+
+
+def _component_record(kind: str, key: str, payload: Any, path: str, index: int = 0) -> dict[str, Any]:
+    mapping = payload if isinstance(payload, dict) else {}
+    alias = mapping.get("alias") or mapping.get("name") or mapping.get("friendly_name") or key
+    component_entity = ""
+    if kind in HELPER_DOMAINS | {"script", "scene"} and key:
+        component_entity = f"{kind}.{key}"
+    component_id = f"{path}:{kind}:{key or index}"
+    return {
+        "component_id": component_id,
+        "kind": kind,
+        "key": key,
+        "entity_id": component_entity,
+        "automation_id": str(mapping.get("id", "")) if kind == "automation" else "",
+        "name": str(alias or component_id)[:240],
+        "file": path,
+        "references": sorted(_component_entity_refs(payload))[:1000],
+        "control_targets": sorted(_control_targets(payload))[:500],
+        "services": sorted(_service_actions(payload))[:300],
+        "device_ids": sorted(_iter_named_ids(payload, "device_id"))[:200],
+        "area_ids": sorted(_iter_named_ids(payload, "area_id"))[:100],
+    }
+
+
+def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    components: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for item in files:
+        if item.get("kind") != "home_assistant_yaml" or not isinstance(item.get("content"), str):
+            continue
+        path = str(item.get("path", ""))
+        text = str(item.get("content", ""))
+        try:
+            data = yaml.load(text, Loader=StrictLoader)
+        except Exception as exc:
+            warnings.append(f"Component catalog skipped {path}: {exc}")
+            continue
+        lower_name = Path(path).name.lower()
+        if lower_name == "automations.yaml" and isinstance(data, list):
+            for index, entry in enumerate(data):
+                if isinstance(entry, dict):
+                    key = str(entry.get("id") or entry.get("alias") or index)
+                    components.append(_component_record("automation", key, entry, path, index))
+            continue
+        if lower_name == "scripts.yaml" and isinstance(data, dict):
+            for key, entry in data.items():
+                components.append(_component_record("script", str(key), entry, path))
+            continue
+        if lower_name == "scenes.yaml" and isinstance(data, list):
+            for index, entry in enumerate(data):
+                if isinstance(entry, dict):
+                    key = str(entry.get("id") or entry.get("name") or index)
+                    components.append(_component_record("scene", key, entry, path, index))
+            continue
+        if not isinstance(data, dict):
+            continue
+        for raw_domain, payload in data.items():
+            domain = str(raw_domain)
+            if domain == "automation":
+                entries = payload if isinstance(payload, list) else list(payload.values()) if isinstance(payload, dict) else []
+                for index, entry in enumerate(entries):
+                    if isinstance(entry, dict):
+                        key = str(entry.get("id") or entry.get("alias") or index)
+                        components.append(_component_record("automation", key, entry, path, index))
+            elif domain in {"script"} | HELPER_DOMAINS:
+                if isinstance(payload, dict):
+                    for key, entry in payload.items():
+                        components.append(_component_record(domain, str(key), entry, path))
+            elif domain == "scene":
+                entries = payload if isinstance(payload, list) else list(payload.values()) if isinstance(payload, dict) else []
+                for index, entry in enumerate(entries):
+                    if isinstance(entry, dict):
+                        key = str(entry.get("id") or entry.get("name") or index)
+                        components.append(_component_record("scene", key, entry, path, index))
+            elif domain == "template" and isinstance(payload, list):
+                for index, entry in enumerate(payload):
+                    if isinstance(entry, dict):
+                        components.append(_component_record("template", str(index), entry, path, index))
+    unique: dict[str, dict[str, Any]] = {}
+    for component in components:
+        unique[str(component["component_id"])] = component
+    return list(unique.values()), warnings
+
+
+def _count_dashboard_cards(value: Any) -> int:
+    count = 0
+    if isinstance(value, dict):
+        if "type" in value and any(key in value for key in ("entity", "entities", "card", "cards", "content", "title", "name")):
+            count += 1
+        for child in value.values():
+            count += _count_dashboard_cards(child)
+    elif isinstance(value, list):
+        for child in value:
+            count += _count_dashboard_cards(child)
+    return count
+
+
+def summarize_dashboard(url_path: str, title: str, config: Any) -> dict[str, Any]:
+    views: list[dict[str, Any]] = []
+    raw_views = config.get("views") if isinstance(config, dict) else []
+    for index, view in enumerate(raw_views if isinstance(raw_views, list) else []):
+        if not isinstance(view, dict):
+            continue
+        refs = sorted(_iter_entity_refs(view))
+        views.append({
+            "title": str(view.get("title") or f"View {index + 1}"),
+            "path": str(view.get("path") or ""),
+            "entity_ids": refs[:1000],
+            "card_count": _count_dashboard_cards(view),
+        })
+    all_refs = sorted({entity for view in views for entity in view["entity_ids"]})
+    return {
+        "url_path": url_path,
+        "title": title,
+        "entity_ids": all_refs[:3000],
+        "view_count": len(views),
+        "card_count": sum(int(view["card_count"]) for view in views),
+        "views": views[:100],
+    }
+
+
+def collect_lovelace_inventory() -> tuple[list[dict[str, Any]], list[str]]:
+    dashboards: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    try:
+        listing, list_warnings = HAWebSocketClient().call_many([
+            ("dashboards", {"type": "lovelace/dashboards/list"}),
+        ])
+        warnings.extend(list_warnings)
+        rows = listing.get("dashboards") if isinstance(listing.get("dashboards"), list) else []
+        definitions: list[tuple[str, str]] = [("", "Overview")]
+        for row in rows[:20]:
+            if not isinstance(row, dict):
+                continue
+            url_path = str(row.get("url_path") or "")
+            title = str(row.get("title") or url_path or "Dashboard")
+            if (url_path, title) not in definitions:
+                definitions.append((url_path, title))
+        commands: list[tuple[str, dict[str, Any]]] = []
+        for index, (url_path, _title) in enumerate(definitions):
+            command: dict[str, Any] = {"type": "lovelace/config"}
+            if url_path:
+                command["url_path"] = url_path
+            commands.append((f"dashboard_{index}", command))
+        configs, config_warnings = HAWebSocketClient().call_many(commands)
+        warnings.extend(config_warnings)
+        for index, (url_path, title) in enumerate(definitions):
+            config = configs.get(f"dashboard_{index}")
+            if isinstance(config, dict):
+                dashboards.append(summarize_dashboard(url_path, title, config))
+    except APIError as exc:
+        warnings.append(f"Lovelace inventory unavailable: {exc}")
+    return dashboards, list(dict.fromkeys(warnings))
+
+
 def collect_home_assistant_inventory() -> dict[str, Any]:
     commands = [
         ("states", {"type": "get_states"}),
@@ -622,11 +873,13 @@ def build_snapshot() -> dict[str, Any]:
         )
         total += len(clean.encode("utf-8"))
     inventory = collect_home_assistant_inventory()
+    components, component_warnings = collect_component_catalog(files)
+    dashboards, dashboard_warnings = collect_lovelace_inventory()
     states = inventory["states"]
     config = inventory["config"]
-    api_warnings = inventory["warnings"]
+    api_warnings = list(dict.fromkeys(inventory["warnings"] + component_warnings + dashboard_warnings))
     snapshot = {
-        "schema_version": 2,
+        "schema_version": 3,
         "snapshot_id": str(uuid.uuid4()),
         "created_at": utc_now(),
         "connector_version": APP_VERSION,
@@ -648,6 +901,10 @@ def build_snapshot() -> dict[str, Any]:
         "device_registry_count": len(inventory["device_registry"]),
         "area_registry": inventory["area_registry"],
         "area_registry_count": len(inventory["area_registry"]),
+        "components": components,
+        "component_count": len(components),
+        "dashboards": dashboards,
+        "dashboard_count": len(dashboards),
         "inventory_status": inventory["inventory_status"],
         "entity_validation": inventory["entity_validation"],
         "api_warnings": api_warnings,
@@ -655,6 +912,8 @@ def build_snapshot() -> dict[str, Any]:
             "secrets_excluded": True,
             "storage_excluded": True,
             "database_excluded": True,
+            "lovelace_read_via_api": True,
+            "component_catalog_generated_locally": True,
             "write_scope": "packages/*.yaml only",
         },
     }
@@ -719,6 +978,20 @@ def store_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
         items.insert(0, proposal)
         write_json(PROPOSALS_PATH, items[:MAX_PROPOSALS])
     return proposal
+
+
+def get_process_map(query: str) -> dict[str, Any]:
+    query = query.strip()
+    if not query:
+        raise ValueError("Describe the process to find")
+    if len(query) > 4000:
+        raise ValueError("Query is too long")
+    snapshot = read_json(LAST_SNAPSHOT_PATH, None)
+    if not isinstance(snapshot, dict):
+        sync_snapshot()
+    return EngineClient().request(
+        "POST", "/v1/process/map", {"query": query, "language": load_options()["language"]}, timeout=120
+    )
 
 
 def analyse_process(query: str) -> dict[str, Any]:
@@ -950,6 +1223,8 @@ def status() -> dict[str, Any]:
             "entity_registry_count": snapshot.get("entity_registry_count", 0),
             "device_registry_count": snapshot.get("device_registry_count", 0),
             "area_registry_count": snapshot.get("area_registry_count", 0),
+            "component_count": snapshot.get("component_count", 0),
+            "dashboard_count": snapshot.get("dashboard_count", 0),
             "entity_validation": snapshot.get("entity_validation", "unavailable"),
             "inventory_status": snapshot.get("inventory_status", {}),
             "truncated": snapshot.get("truncated", False),
@@ -1033,6 +1308,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = pair_engine(incoming)
             elif path == "/api/sync":
                 result = sync_snapshot()
+            elif path == "/api/process-map":
+                result = get_process_map(str(incoming.get("query", "")))
             elif path == "/api/analyse":
                 result = analyse_process(str(incoming.get("query", "")))
             elif path == "/api/apply":

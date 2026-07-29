@@ -1,29 +1,28 @@
-# Installation
+# AI Supervisor V5 Connector 5.0.0-alpha5
 
-1. Install **AI Supervisor V5 Connector** from the Home Assistant Apps repository.
-2. Start the App and open its Web UI.
-3. Install the Windows Engine on the mini PC.
-4. Open `http://localhost:8765` on the mini PC.
-5. Enter an OpenAI API key and copy the six-digit pairing code.
-6. In the Connector, enter the displayed LAN URL and pairing code.
-7. Select **Pair**.
-8. Select **Scan and transfer**.
+## What Alpha5 adds
 
-## Safe write mode
+Alpha5 builds a process map locally before the AI model is used. The map follows:
 
-The option `allow_package_writes` is disabled by default. Enable it only after read-only scanning and proposal generation work correctly.
+```text
+device -> entities -> YAML components -> supporting helpers -> dashboards -> files
+```
 
-Alpha4 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum of three files can be included in one transaction. Every transaction requires:
+YAML components include automations, scripts, scenes, templates and helper definitions. Lovelace dashboards are read through the Home Assistant WebSocket API and reduced to safe metadata: dashboard title, URL path, view title/path, card count and referenced entity IDs.
 
-- exact typed confirmation;
-- a Home Assistant partial backup;
-- unchanged source file hashes;
-- valid YAML without duplicate mapping keys;
-- a successful Home Assistant configuration check.
+## Read-only discovery
+
+Use **Rasti proceso žemėlapį** to inspect what the system found before sending anything to OpenAI. A typical curtain process should show physical curtain devices, `cover.*` entities, related automations/scripts/helpers, dashboard references and source files.
+
+## Write policy
+
+Alpha5 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum of three files can be included in one transaction. Every transaction requires:
+
+1. writes enabled in App Configuration;
+2. an explicit confirmation phrase;
+3. a Home Assistant backup;
+4. strict YAML validation;
+5. a Home Assistant configuration check;
+6. automatic restoration of previous files when validation fails.
 
 Home Assistant is not restarted automatically.
-
-
-## Alpha4
-
-After pairing, use **Nuskaityti ir perduoti**. A complete snapshot should show live entity states plus entity, device and area registry counts. Missing-entity findings are generated only when the entity registry was retrieved successfully.
