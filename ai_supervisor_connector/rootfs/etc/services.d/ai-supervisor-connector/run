@@ -1,0 +1,2 @@
+#!/usr/bin/with-contenv bashio
+exec python3 -u /opt/ai_supervisor_connector/server.py
