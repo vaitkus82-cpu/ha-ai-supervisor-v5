@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha8"
+APP_VERSION = "5.0.0-alpha9"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -1238,6 +1238,48 @@ def build_snapshot() -> dict[str, Any]:
     with LOCK:
         write_json(LAST_SNAPSHOT_PATH, snapshot)
     return snapshot
+
+def pair_engine(incoming: dict[str, Any]) -> dict[str, Any]:
+    url = str(incoming.get("engine_url", "")).strip().rstrip("/")
+    code = str(incoming.get("pairing_code", "")).strip()
+    if not re.match(r"^https?://[^\s]+$", url):
+        raise ValueError("Enter a valid Engine address, for example http://192.168.1.50:8765")
+    if not re.fullmatch(r"\d{6}", code):
+        raise ValueError("Pairing code must contain 6 digits")
+
+    saved = read_json(SETTINGS_PATH, {})
+    write_json(SETTINGS_PATH, {**saved, "engine_url": url, "engine_token": ""})
+    response = EngineClient().request(
+        "POST",
+        "/v1/pair",
+        {
+            "code": code,
+            "connector_name": "Home Assistant AI Supervisor V5",
+            "connector_version": APP_VERSION,
+        },
+        auth=False,
+        timeout=30,
+    )
+    token = str(response.get("token", ""))
+    if len(token) < 24:
+        raise APIError("Engine did not return a valid pairing token")
+
+    settings = {
+        "engine_url": url,
+        "engine_token": token,
+        "paired_at": utc_now(),
+        "engine_name": str(response.get("engine_name", "Windows Engine")),
+    }
+    write_json(SETTINGS_PATH, settings)
+    return {"ok": True, **public_settings()}
+
+
+def engine_health() -> dict[str, Any]:
+    try:
+        return EngineClient().request("GET", "/health", timeout=8, auth=False)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
 
 def sync_snapshot() -> dict[str, Any]:
     snapshot = build_snapshot()

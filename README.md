@@ -2,7 +2,7 @@
 
 Home Assistant side of the split AI Supervisor V5 architecture.
 
-Version **5.0.0-alpha8** makes the process map resilient to incomplete snapshots. The Connector sends Home Assistant root YAML and `packages/` first, before optional source code or documentation. The Windows Engine also rebuilds the exact YAML and package-component index directly from the received files before every process-map request.
+Version **5.0.0-alpha9** makes the process map resilient to incomplete snapshots. The Connector sends Home Assistant root YAML and `packages/` first, before optional source code or documentation. The Windows Engine also rebuilds the exact YAML and package-component index directly from the received files before every process-map request.
 
 The Windows Engine builds this dependency graph:
 

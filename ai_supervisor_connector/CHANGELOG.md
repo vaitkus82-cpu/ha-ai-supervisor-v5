@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.0-alpha9
+
+- Restored the missing `engine_health()` function used by `/api/status`.
+- Restored the missing `pair_engine()` function used by `/api/pair`.
+- Added regression tests so the dashboard status and pairing endpoints cannot fail with `NameError`.
+- Keeps all Alpha8 snapshot-priority and Engine fallback improvements unchanged.
+
 ## 5.0.0-alpha8
 
 - Snapshot collection now prioritises root Home Assistant YAML and `packages/` before optional source code and documentation.
