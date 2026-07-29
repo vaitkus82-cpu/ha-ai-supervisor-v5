@@ -2,43 +2,36 @@
 
 ## Trust boundary
 
-The Windows Engine may analyse and generate proposals, but it does not receive a Home Assistant administrator token and cannot write directly to `/config`.
-
-The Home Assistant Connector is the only component that can write files. It independently validates allowed paths, YAML structure, source hashes and risk boundaries before a proposal can be applied.
+The Windows Engine analyses and generates proposals, but it does not receive a Home Assistant administrator token and cannot write directly to `/config`. The Home Assistant Connector is the only component that can write files.
 
 ## Network
 
-Alpha6 is intended for a trusted local network. The Windows installer opens TCP port 8765 only for the Windows **Private** firewall profile and `LocalSubnet`. No router port forwarding is required or supported.
+Alpha7 is intended for a trusted local network. TCP port 8765 is opened only for the Windows Private firewall profile and local subnet. No router port forwarding is required or supported.
 
-## Pairing
+## Alpha7 discovery pipeline
 
-The Engine displays a six-digit code valid for 24 hours. Successful pairing returns a randomly generated bearer token. The Engine stores only its SHA-256 hash. The Connector stores the token in its private app data.
+1. Select exact physical process entities from the entity and device registries.
+2. Build an exact raw-text entity-to-file index for every allowed YAML file.
+3. Parse package domains structurally when possible.
+4. Supplement parsed components with raw Jinja/custom-field references.
+5. Identify the primary package from exact seed matches and filename/process terms.
+6. Add all automations, scripts and helpers defined in the primary package.
+7. Follow only real component dependencies.
+8. Classify other matching files as readiness, diagnostics or supporting.
+9. Use dashboards only as confirmation; dashboards never expand the graph.
 
 ## Data minimisation
 
-The Connector excludes:
-
-- `secrets.yaml`;
-- `.storage`;
-- Home Assistant databases and logs;
-- backups, media and hidden directories.
-
-Known secret patterns and `!secret` references are redacted before transfer.
+The Connector excludes secrets, `.storage`, databases, logs, backups, media and hidden directories. Device identifiers, network connections, serial numbers and credentials are not included.
 
 ## Apply transaction
 
-1. Verify the proposal exists and has not already been applied.
-2. Require exact typed confirmation.
-3. Restrict paths to `packages/*.yaml` or `packages/*.yml`.
-4. Verify source SHA-256 hashes.
-5. Parse YAML and reject duplicate keys.
-6. Create a Home Assistant partial backup.
-7. Write all proposed files atomically.
-8. Run the Home Assistant configuration check.
-9. Restore all original files automatically if the check fails.
-10. Never restart Home Assistant automatically.
-
-
-## Alpha6 inventory
-
-The Connector uses the Home Assistant WebSocket proxy to collect current states and compact entity, device and area registry records. Hardware identifiers, network connections, serial numbers and credentials are not included. The Engine classifies findings as confirmed, likely conflicts or unverified.
+1. Verify proposal and confirmation.
+2. Restrict paths to `packages/*.yaml` or `packages/*.yml`.
+3. Verify source SHA-256 hashes.
+4. Parse YAML and reject duplicate keys.
+5. Create a Home Assistant backup.
+6. Write files atomically.
+7. Run the Home Assistant configuration check.
+8. Restore originals automatically if validation fails.
+9. Never restart Home Assistant automatically.

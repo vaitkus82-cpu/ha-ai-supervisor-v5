@@ -1,14 +1,5 @@
-# AI Supervisor V5 Connector 5.0.0-alpha6
+# AI Supervisor V5 Connector 5.0.0-alpha7
 
-The Connector is the guarded Home Assistant half of AI Supervisor V5.
+Alpha7 adds exact package and Jinja reference indexing. It recognises entities inside normal YAML fields, quoted templates, `states()`, `state_attr()`, custom variables and custom fields. Parsed and raw-text component data are merged so package automations, scripts and helpers remain connected to their physical devices.
 
-Alpha6:
-
-- reads Home Assistant files and live registries;
-- recognises automations and scripts in arbitrary `!include` files;
-- creates an exact entity-to-component reverse index;
-- reads Lovelace dashboard references without exposing `.storage`;
-- treats dashboards as confirmation only, never as a source for new devices;
-- separates primary process entities, dependencies and same-device context;
-- keeps package writes disabled by default;
-- requires backup, explicit confirmation, configuration validation and rollback for any write.
+Writes remain disabled by default and are limited to confirmed `packages/*.yaml` transactions after backup and Home Assistant configuration validation.

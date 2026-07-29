@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha6"
+APP_VERSION = "5.0.0-alpha7"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -109,6 +109,14 @@ HELPER_DOMAINS = {
     "input_number", "input_select", "input_text", "schedule", "timer",
 }
 COMPONENT_DOMAINS = HELPER_DOMAINS | {"automation", "script", "scene", "template"}
+
+TOP_LEVEL_DOMAIN_RE = re.compile(r"^(?P<key>[a-z_][a-z0-9_]*)\s*:\s*(?:#.*)?$")
+MAPPING_CHILD_RE = re.compile(r"^(?P<indent>\s+)(?P<key>[A-Za-z0-9_\-]+)\s*:\s*(?:#.*)?$")
+RAW_ID_RE = re.compile(r"(?m)^\s*(?:-\s*)?id\s*:\s*['\"]?([^'\"#\n]+)")
+RAW_ALIAS_RE = re.compile(r"(?m)^\s*(?:-\s*)?(?:alias|name|friendly_name)\s*:\s*['\"]?([^'\"#\n]+)")
+RAW_SERVICE_RE = re.compile(r"(?m)^\s*(?:-\s*)?(?:service|action)\s*:\s*['\"]?([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)")
+RAW_DEVICE_ID_RE = re.compile(r"(?m)^\s*device_id\s*:\s*['\"]?([A-Za-z0-9_-]+)")
+RAW_AREA_ID_RE = re.compile(r"(?m)^\s*area_id\s*:\s*['\"]?([A-Za-z0-9_-]+)")
 
 
 class DuplicateYamlKeyError(ValueError):
@@ -608,6 +616,135 @@ def _control_targets(value: Any) -> set[str]:
     return targets
 
 
+
+def _raw_component_record(kind: str, key: str, block: str, path: str, line_start: int, line_end: int, index: int = 0) -> dict[str, Any]:
+    """Create a component from raw YAML text.
+
+    This is intentionally conservative: it records exact entity IDs and basic
+    component metadata without trying to execute or fully interpret Jinja.
+    It is used both as a supplement to parsed YAML and as a fallback when a
+    valid Home Assistant package contains tags or syntax PyYAML cannot model.
+    """
+    clean_key = str(key or index)
+    alias_match = RAW_ALIAS_RE.search(block)
+    automation_match = RAW_ID_RE.search(block)
+    alias = alias_match.group(1).strip() if alias_match else clean_key
+    component_entity = f"{kind}.{clean_key}" if kind in HELPER_DOMAINS | {"script", "scene"} and clean_key else ""
+    services = sorted(set(RAW_SERVICE_RE.findall(block)))[:300]
+    references = sorted(set(ENTITY_RE.findall(block)) - set(services))[:2000]
+    control_service_domains = {
+        action.split(".", 1)[0]
+        for action in services
+        if "." in action and action.split(".", 1)[0] in CONTROL_DOMAINS
+    }
+    control_targets: set[str] = set()
+    if control_service_domains:
+        for line in block.splitlines():
+            lowered = line.lower()
+            if any(token in lowered for token in ("entity_id:", "target:", "cover_entity:")):
+                for entity in ENTITY_RE.findall(line):
+                    if entity.split(".", 1)[0] in CONTROL_DOMAINS:
+                        control_targets.add(entity)
+    return {
+        "component_id": f"{path}:{kind}:{clean_key or index}",
+        "kind": kind,
+        "key": clean_key,
+        "entity_id": component_entity,
+        "automation_id": automation_match.group(1).strip() if kind == "automation" and automation_match else "",
+        "name": str(alias or clean_key)[:240],
+        "file": path,
+        "references": references,
+        "control_targets": sorted(control_targets)[:500],
+        "services": services,
+        "device_ids": sorted(set(RAW_DEVICE_ID_RE.findall(block)))[:200],
+        "area_ids": sorted(set(RAW_AREA_ID_RE.findall(block)))[:100],
+        "line_start": line_start,
+        "line_end": line_end,
+        "catalog_source": "raw_yaml_text",
+    }
+
+
+def _section_child_blocks(lines: list[str], section_start: int, section_end: int, kind: str) -> list[tuple[str, int, int, str]]:
+    """Split a top-level package domain into named/list child blocks."""
+    body_indices = [
+        index for index in range(section_start + 1, section_end)
+        if lines[index].strip() and not lines[index].lstrip().startswith("#")
+    ]
+    if not body_indices:
+        return []
+    base_indent = min(len(lines[index]) - len(lines[index].lstrip(" ")) for index in body_indices)
+    starts: list[tuple[int, str]] = []
+    for index in body_indices:
+        raw = lines[index]
+        indent = len(raw) - len(raw.lstrip(" "))
+        if indent != base_indent:
+            continue
+        stripped = raw.strip()
+        if stripped.startswith("-"):
+            if kind not in {"automation", "scene", "template"}:
+                continue
+            inline_id = re.search(r"\bid\s*:\s*['\"]?([^'\"#]+)", stripped)
+            inline_alias = re.search(r"\b(?:alias|name)\s*:\s*['\"]?([^'\"#]+)", stripped)
+            key = (inline_id or inline_alias).group(1).strip() if (inline_id or inline_alias) else str(len(starts))
+            starts.append((index, key))
+            continue
+        match = MAPPING_CHILD_RE.match(raw)
+        if match:
+            starts.append((index, match.group("key")))
+    blocks: list[tuple[str, int, int, str]] = []
+    for pos, (start, key) in enumerate(starts):
+        end = starts[pos + 1][0] if pos + 1 < len(starts) else section_end
+        block = "\n".join(lines[start:end])
+        if kind == "automation":
+            id_match = RAW_ID_RE.search(block)
+            alias_match = RAW_ALIAS_RE.search(block)
+            if id_match:
+                key = id_match.group(1).strip()
+            elif key.isdigit() and alias_match:
+                key = alias_match.group(1).strip()
+        elif kind == "scene":
+            id_match = RAW_ID_RE.search(block)
+            alias_match = RAW_ALIAS_RE.search(block)
+            if id_match:
+                key = id_match.group(1).strip()
+            elif key.isdigit() and alias_match:
+                key = alias_match.group(1).strip()
+        blocks.append((key, start + 1, end, block))
+    return blocks
+
+
+def collect_text_component_catalog(path: str, text: str) -> list[dict[str, Any]]:
+    """Extract package components directly from YAML text and Jinja strings."""
+    lines = text.splitlines()
+    top_sections: list[tuple[int, str]] = []
+    for index, raw in enumerate(lines):
+        if raw.startswith((" ", "\t")) or not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        match = TOP_LEVEL_DOMAIN_RE.match(raw.strip())
+        if match and match.group("key") in COMPONENT_DOMAINS:
+            top_sections.append((index, match.group("key")))
+    components: list[dict[str, Any]] = []
+    for pos, (start, kind) in enumerate(top_sections):
+        end = top_sections[pos + 1][0] if pos + 1 < len(top_sections) else len(lines)
+        for index, (key, line_start, line_end, block) in enumerate(_section_child_blocks(lines, start, end, kind)):
+            components.append(_raw_component_record(kind, key, block, path, line_start, line_end, index))
+    return components
+
+
+def _merge_component(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(existing)
+    for key in ("references", "control_targets", "services", "device_ids", "area_ids"):
+        merged[key] = sorted(set(existing.get(key, []) or []) | set(incoming.get(key, []) or []))
+    for key in ("automation_id", "entity_id", "name"):
+        if not merged.get(key) and incoming.get(key):
+            merged[key] = incoming[key]
+    if incoming.get("line_start"):
+        merged.setdefault("line_start", incoming.get("line_start"))
+        merged.setdefault("line_end", incoming.get("line_end"))
+    merged["catalog_source"] = "parsed_plus_raw" if existing.get("catalog_source") != "raw_yaml_text" else incoming.get("catalog_source", "raw_yaml_text")
+    return merged
+
+
 def _component_record(kind: str, key: str, payload: Any, path: str, index: int = 0) -> dict[str, Any]:
     mapping = payload if isinstance(payload, dict) else {}
     alias = mapping.get("alias") or mapping.get("name") or mapping.get("friendly_name") or key
@@ -628,6 +765,7 @@ def _component_record(kind: str, key: str, payload: Any, path: str, index: int =
         "services": sorted(_service_actions(payload))[:300],
         "device_ids": sorted(_iter_named_ids(payload, "device_id"))[:200],
         "area_ids": sorted(_iter_named_ids(payload, "area_id"))[:100],
+        "catalog_source": "parsed_yaml",
     }
 
 
@@ -705,7 +843,7 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
     Home Assistant allows automations and scripts to be split into arbitrary
     files via !include / !include_dir_* directives. Those included files often
     have a root list or a root mapping without an ``automation:`` / ``script:``
-    wrapper. Alpha6 recognises those shapes instead of only relying on standard
+    wrapper. Alpha7 recognises those shapes and supplements them with exact raw-text Jinja references instead of only relying on standard
     filenames such as automations.yaml and scripts.yaml.
     """
     components: list[dict[str, Any]] = []
@@ -715,11 +853,13 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
             continue
         path = str(item.get("path", ""))
         text = str(item.get("content", ""))
+        raw_components = collect_text_component_catalog(path, text)
+        file_components: list[dict[str, Any]] = []
         try:
             data = yaml.load(text, Loader=StrictLoader)
         except Exception as exc:
-            warnings.append(f"Component catalog skipped {path}: {exc}")
-            continue
+            warnings.append(f"Component catalog used raw-text fallback for {path}: {exc}")
+            data = None
 
         lower_name = Path(path).name.lower()
         hint = _path_component_hint(path)
@@ -731,21 +871,32 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
                     continue
                 if lower_name == "scenes.yaml":
                     key = str(entry.get("id") or entry.get("name") or index)
-                    components.append(_component_record("scene", key, entry, path, index))
+                    file_components.append(_component_record("scene", key, entry, path, index))
                 elif lower_name == "automations.yaml":
                     key = str(entry.get("id") or entry.get("alias") or index)
-                    components.append(_component_record("automation", key, entry, path, index))
+                    file_components.append(_component_record("automation", key, entry, path, index))
                 else:
-                    _append_inferred_component(components, entry, path, str(index), index, hint)
+                    _append_inferred_component(file_components, entry, path, str(index), index, hint)
+            merged_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for component in file_components + raw_components:
+                key = (str(component.get("file")), str(component.get("kind")), str(component.get("key")))
+                merged_by_key[key] = _merge_component(merged_by_key[key], component) if key in merged_by_key else component
+            components.extend(merged_by_key.values())
             continue
 
         if not isinstance(data, dict):
+            components.extend(raw_components)
             continue
 
         # A single included automation/script may itself be the root mapping.
         # Do not use the path hint here: a scripts directory commonly contains
         # a mapping of multiple named scripts rather than one script body.
-        if _append_inferred_component(components, data, path, Path(path).stem, 0, ""):
+        if _append_inferred_component(file_components, data, path, Path(path).stem, 0, ""):
+            merged_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for component in file_components + raw_components:
+                key = (str(component.get("file")), str(component.get("kind")), str(component.get("key")))
+                merged_by_key[key] = _merge_component(merged_by_key[key], component) if key in merged_by_key else component
+            components.extend(merged_by_key.values())
             continue
 
         handled_keys: set[str] = set()
@@ -762,17 +913,17 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
                 for key, entry, index in entries:
                     if isinstance(entry, dict):
                         component_key = str(entry.get("id") or entry.get("alias") or key or index)
-                        components.append(_component_record("automation", component_key, entry, path, index))
+                        file_components.append(_component_record("automation", component_key, entry, path, index))
             elif domain == "script":
                 handled_keys.add(domain)
                 if isinstance(payload, dict):
                     for index, (key, entry) in enumerate(payload.items()):
-                        components.append(_component_record("script", str(key), entry, path, index))
+                        file_components.append(_component_record("script", str(key), entry, path, index))
             elif domain in HELPER_DOMAINS:
                 handled_keys.add(domain)
                 if isinstance(payload, dict):
                     for index, (key, entry) in enumerate(payload.items()):
-                        components.append(_component_record(domain, str(key), entry, path, index))
+                        file_components.append(_component_record(domain, str(key), entry, path, index))
             elif domain == "scene":
                 handled_keys.add(domain)
                 if isinstance(payload, list):
@@ -784,18 +935,24 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
                 for key, entry, index in entries:
                     if isinstance(entry, dict):
                         component_key = str(entry.get("id") or entry.get("name") or key or index)
-                        components.append(_component_record("scene", component_key, entry, path, index))
+                        file_components.append(_component_record("scene", component_key, entry, path, index))
             elif domain == "template" and isinstance(payload, list):
                 handled_keys.add(domain)
                 for index, entry in enumerate(payload):
                     if isinstance(entry, dict):
-                        components.append(_component_record("template", str(index), entry, path, index))
+                        file_components.append(_component_record("template", str(index), entry, path, index))
 
         # Generic include files may be mappings keyed by an automation/script ID.
         for index, (key, entry) in enumerate(data.items()):
             if str(key) in handled_keys or not isinstance(entry, dict):
                 continue
-            _append_inferred_component(components, entry, path, str(key), index, hint)
+            _append_inferred_component(file_components, entry, path, str(key), index, hint)
+
+        merged_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for component in file_components + raw_components:
+            key = (str(component.get("file")), str(component.get("kind")), str(component.get("key")))
+            merged_by_key[key] = _merge_component(merged_by_key[key], component) if key in merged_by_key else component
+        components.extend(merged_by_key.values())
 
     unique: dict[str, dict[str, Any]] = {}
     for component in components:
