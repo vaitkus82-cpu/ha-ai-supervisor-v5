@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha10"
+APP_VERSION = "5.0.0-alpha11"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -1412,13 +1412,29 @@ def validate_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
             )
         except (ValueError, OSError, UnicodeDecodeError) as exc:
             errors.append(str(exc))
+    allowed_files = proposal.get("allowed_files") if isinstance(proposal.get("allowed_files"), list) else []
+    allowed_set: set[str] = set()
+    for allowed in allowed_files:
+        try:
+            allowed_set.add(normalise_target_path(str(allowed))[0])
+        except ValueError as exc:
+            errors.append(f"Invalid proposal allowlist entry: {exc}")
+    if allowed_set:
+        for item in validated:
+            if item["path"] not in allowed_set:
+                errors.append(f"{item['path']}: change is outside the proposal allowlist")
     risk = risk_from_changes(changes if isinstance(changes, list) else [])
+    structurally_valid = not errors and bool(validated)
+    apply_allowed = structurally_valid and proposal.get("apply_ready") is True and not bool(proposal.get("review_only"))
     return {
-        "valid": not errors and bool(validated),
+        "valid": structurally_valid,
+        "apply_allowed": apply_allowed,
+        "review_only": bool(proposal.get("review_only")),
         "errors": errors,
         "changes": validated,
         "connector_risk": risk,
         "write_scope": "packages/ only",
+        "allowed_files": sorted(allowed_set),
     }
 
 
@@ -1460,6 +1476,8 @@ def apply_proposal(incoming: dict[str, Any]) -> dict[str, Any]:
     validation = validate_proposal(proposal)
     if not validation["valid"]:
         raise ValueError("Proposal is blocked: " + "; ".join(validation["errors"]))
+    if proposal.get("apply_ready") is not True or not validation.get("apply_allowed"):
+        raise ValueError("Proposal is review-only. Generate a new explicitly apply-ready proposal after review.")
     if proposal.get("applied_at"):
         raise ValueError("Proposal has already been applied")
     changes = proposal.get("changes", [])

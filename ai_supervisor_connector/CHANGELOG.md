@@ -1,19 +1,14 @@
 # Changelog
 
+## 5.0.0-alpha11
+
+- Added separate proposal states: blocked, review-only and apply-ready.
+- Review-only proposals can be structurally valid and show a real unified diff, but the Apply button is hidden.
+- Connector refuses to apply any proposal whose `apply_ready` flag is false.
+- Connector verifies that every changed file stays inside the Engine-provided explicit allowlist.
+- Proposal UI shows generation mode, edit-operation count and unified diff instead of dumping the full file.
+- Preserved backup, exact confirmation, strict YAML validation, configuration check and rollback controls.
+
 ## 5.0.0-alpha10
 
-- Suvienodinta Connector ir Windows Engine versija.
-- Raw YAML kataloge tiesioginiai `script.*` ir `scene.*` kvietimai saugomi kaip tikros priklausomybės.
-- Sąsaja paaiškina vienkryptį proceso žemėlapį ir rodo, kiek atgalinių bendrų naudotojų sąmoningai neįtraukta.
-- Išsaugoti Alpha9 būsenos ir poravimo pataisymai.
-- Rašymas lieka išjungtas pagal nutylėjimą.
-
-## 5.0.0-alpha9
-
-- Atkurta trūkusi `engine_health()` funkcija.
-- Atkurta `pair_engine()` funkcija.
-
-## 5.0.0-alpha8
-
-- Root YAML ir `packages/` failai perduodami pirmiausia.
-- Pridėta snapshot apimties diagnostika.
+- Added the one-way process graph and suppressed shared-helper reverse fan-out.
