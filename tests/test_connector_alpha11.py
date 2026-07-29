@@ -13,14 +13,14 @@ def load_server(data_dir: str, config_dir: str):
     os.environ["DATA_DIR"] = data_dir
     os.environ["HOMEASSISTANT_CONFIG_DIR"] = config_dir
     os.environ["SUPERVISOR_TOKEN"] = "test-token"
-    spec = importlib.util.spec_from_file_location("connector_alpha11_test", SERVER_PATH)
+    spec = importlib.util.spec_from_file_location("connector_alpha12_test", SERVER_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader
     spec.loader.exec_module(module)
     return module
 
 
-class ConnectorAlpha11Tests(unittest.TestCase):
+class ConnectorAlpha12Tests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.data = Path(self.temp.name) / "data"
@@ -55,7 +55,7 @@ class ConnectorAlpha11Tests(unittest.TestCase):
         }
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha11", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0-alpha12", self.mod.APP_VERSION)
 
     def test_review_only_proposal_is_valid_but_not_apply_allowed(self):
         validation = self.mod.validate_proposal(self.proposal(apply_ready=False, review_only=True))

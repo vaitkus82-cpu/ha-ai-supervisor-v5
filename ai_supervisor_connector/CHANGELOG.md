@@ -1,13 +1,17 @@
 # Changelog
 
+## 5.0.0-alpha12
+
+- Added support for Engine structural-YAML proposal mode.
+- Blocked proposals are now shown as blocked immediately instead of displaying a green success message first.
+- Proposal risk is normalised to the higher of Engine risk and Connector-computed risk.
+- The UI displays structural operation counts and the Engine-generated unified diff.
+- Preserved explicit allowlists, review-only states, strict YAML validation, backup, configuration check and rollback.
+
 ## 5.0.0-alpha11
 
 - Added separate proposal states: blocked, review-only and apply-ready.
-- Review-only proposals can be structurally valid and show a real unified diff, but the Apply button is hidden.
-- Connector refuses to apply any proposal whose `apply_ready` flag is false.
-- Connector verifies that every changed file stays inside the Engine-provided explicit allowlist.
-- Proposal UI shows generation mode, edit-operation count and unified diff instead of dumping the full file.
-- Preserved backup, exact confirmation, strict YAML validation, configuration check and rollback controls.
+- Added explicit allowlist verification and unified-diff display.
 
 ## 5.0.0-alpha10
 

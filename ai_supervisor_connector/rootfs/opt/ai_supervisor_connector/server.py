@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha11"
+APP_VERSION = "5.0.0-alpha12"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -1303,7 +1303,13 @@ def store_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
     proposal = dict(proposal)
     proposal.setdefault("proposal_id", str(uuid.uuid4()))
     proposal.setdefault("created_at", utc_now())
-    proposal["connector_validation"] = validate_proposal(proposal)
+    validation = validate_proposal(proposal)
+    proposal["connector_validation"] = validation
+    risk_order = {"low": 0, "medium": 1, "high": 2}
+    engine_risk = str(proposal.get("risk_level", "medium"))
+    connector_risk = str(validation.get("connector_risk", "medium"))
+    proposal["risk_level"] = max((engine_risk, connector_risk), key=lambda value: risk_order.get(value, 1))
+    proposal["proposal_status"] = "valid" if validation.get("valid") else "blocked"
     with LOCK:
         items = read_json(PROPOSALS_PATH, [])
         if not isinstance(items, list):

@@ -1,4 +1,4 @@
-# AI Supervisor V5 Connector 5.0.0-alpha11
+# AI Supervisor V5 Connector 5.0.0-alpha12
 
 ## Proceso paieška
 
@@ -8,12 +8,14 @@
 4. Readiness ir diagnostics failai rodomi tik kaip informacinės nuorodos.
 5. Dashboardai procesą tik patvirtina ir jo neplečia.
 
-## Kodo pasiūlymai
+## Struktūriniai kodo pasiūlymai
 
 - Užklausoje privaloma aiškiai įvardyti vieną–tris `packages/*.yaml` failus.
-- Pirma sukuriamas trumpas planas, po to – tikslios in-memory redagavimo operacijos.
-- Connector gauna pilną galutinį failą ir unified diff, tada atlieka strict YAML patikrą.
-- `Pakeitimų netaikyk` sukuria review-only pasiūlymą: diff matomas, bet Apply mygtuko nėra.
-- Taikymui reikia naujo, aiškiai apply-ready pasiūlymo, įjungto `allow_package_writes`, tikslios patvirtinimo frazės, backup ir sėkmingos HA konfigūracijos patikros.
+- Pirma sukuriamas trumpas planas, po to Engine gauna struktūrines operacijas su tiksliu YAML keliu.
+- Įtrauką ir galutinį failo tekstą formuoja Engine, ne kalbos modelis.
+- Po kiekvienos operacijos atliekama strict YAML patikra.
+- Connector dar kartą patikrina galutinį YAML ir dubliuotus raktus prieš rodydamas taikymo galimybę.
+- `Pakeitimų netaikyk` sukuria review-only pasiūlymą: diff matomas, bet įrašymo mygtuko nėra.
+- Taikymui reikia naujo apply-ready pasiūlymo, įjungto `allow_package_writes`, tikslios patvirtinimo frazės, backup ir sėkmingos HA konfigūracijos patikros.
 
 Rašymas pagal nutylėjimą išjungtas ir ribojamas `/config/packages/*.yaml`.

@@ -70,7 +70,7 @@
 
     <section class="card wide">
       <h2>3. Proceso žemėlapis</h2>
-      <div class="muted">Alpha11 naudoja dviejų etapų pataisymų generatorių: pirma sudaro trumpą planą, tada kuria tik tikslias operacijas aiškiai leistiems packages/*.yaml failams. Bendras helperis nebeįtraukia visų kitų jo naudotojų.</div>
+      <div class="muted">Alpha12 naudoja dviejų etapų pataisymų generatorių: pirma sudaro trumpą planą, tada redaguoja konkrečius esamo YAML medžio mazgus. Įtraukas ir galutinį failą formuoja Engine, o bendras helperis nebeįtraukia visų kitų jo naudotojų.</div>
       <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
       <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
     </section>
@@ -79,7 +79,7 @@
       <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha11 prieš kodo generavimą reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, kuria trumpą planą ir taiko tik tikslias in-memory operacijas. Pasiūlymas tikrinamas dėl failų apimties, dubliuotų YAML raktų, nepatvirtintų custom event ir struktūrinio validumo. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha12 prieš kodo generavimą reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, kuria trumpą planą ir taiko struktūrines YAML operacijas į konkrečius esamus mazgus. Po kiekvienos operacijos visas failas iš naujo parsintas, tikrinami dubliuoti raktai, nepatvirtinti custom event ir galutinis struktūrinis validumas. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -205,7 +205,7 @@ async function findProcessMap() {
 }
 async function analyse() {
   const b=event.currentTarget; busy(b,true,'AI analizuoja...');
-  try { const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})}); if(r.process_map) renderProcessMap(r.process_map); message('analyseResult',`Pasiūlymas parengtas: ${r.proposal_id}. Rizika: ${r.risk_level || '-'}.`); await loadProposals(); }
+  try { const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})}); if(r.process_map) renderProcessMap(r.process_map); const v=r.connector_validation||{}; if(v.valid){ message('analyseResult',`Pasiūlymas patikrintas: ${r.proposal_id}. Rizika: ${r.risk_level || '-'}.`); } else { message('analyseResult',`Pasiūlymas užblokuotas: ${(v.errors||[]).join('; ') || 'nepraėjo struktūrinės patikros'}.`,'error'); } await loadProposals(); }
   catch(e){ message('analyseResult',e.message,'error'); } finally { busy(b,false); }
 }
 function proposalHtml(p) {

@@ -2,24 +2,25 @@
 
 Home Assistant dalis, skirta dviejų dalių AI Supervisor V5 architektūrai.
 
-Versija **5.0.0-alpha11** išsaugo tikslų vienkryptį proceso žemėlapį ir prideda saugų dviejų etapų kodo pasiūlymų generatorių:
+Versija **5.0.0-alpha12** išsaugo tikslų vienkryptį proceso žemėlapį ir naudoja struktūrinį YAML pataisymų generatorių:
 
 ```text
 aiškiai leisti packages/*.yaml failai
   -> trumpas pataisymo planas
-  -> tikslios exact-text operacijos
-  -> in-memory galutinis failas
-  -> unified diff
-  -> strict YAML ir saugos patikros
-  -> tik tada peržiūra arba atskirai leidžiamas taikymas
+  -> esamo YAML medžio keliai
+  -> struktūrinės operacijos esamuose mazguose
+  -> strict YAML patikra po kiekvienos operacijos
+  -> tikras unified diff
+  -> peržiūra arba atskirai leidžiamas taikymas
 ```
 
 ## Saugumas
 
 - `secrets.yaml`, `.storage`, duomenų bazės, žurnalai ir atsarginės kopijos neperduodami.
-- Lovelace skaitomas per API; neperduodami raw `.storage` failai.
-- MAC adresai, serijos numeriai, prisijungimo duomenys ir unikalūs identifikatoriai pašalinami.
-- Kodo generavimas be aiškaus `packages/*.yaml` allowlist blokuojamas.
+- Kodo generavimas be aiškaus `packages/*.yaml` leidžiamų failų sąrašo blokuojamas.
+- AI negali pats nustatyti įtraukų ar pridėti antro viršutinio `automation:` rakto: struktūrą valdo Engine.
+- Po kiekvienos operacijos visas YAML failas iš naujo parsintas.
+- Nulinį arba kelis komponentus atitinkantis struktūrinis kelias blokuojamas.
 - Review-only pasiūlymai negali būti įrašomi.
 - Leidžiami tik aiškiai patvirtinti YAML pakeitimai po `/config/packages/`.
 - Privaloma atsarginė kopija, konfigūracijos patikra ir automatinis failų grąžinimas nesėkmės atveju.

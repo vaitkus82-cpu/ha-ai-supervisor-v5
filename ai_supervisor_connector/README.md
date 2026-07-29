@@ -1,5 +1,5 @@
-# AI Supervisor V5 Connector 5.0.0-alpha11
+# AI Supervisor V5 Connector 5.0.0-alpha12
 
 Connector sukuria privatų Home Assistant snapshot ir perduoda jį Windows Engine.
 
-Alpha11 skirtas vienkrypčiam proceso žemėlapiui: nuo tikslių fizinio proceso entities pereinama tik į tiesioginius vykdymo komponentus ir jų apibrėžtas priklausomybes. Bendras helperis negali grąžinti žemėlapio atgal į visus kitus jo naudotojus.
+Alpha12 naudoja vienkryptį proceso žemėlapį ir struktūrinį YAML redaktorių. AI nurodo tik esamo YAML medžio kelią bei norimą reikšmę, o įtraukas, įterpimą, pilno failo validaciją ir unified diff sukuria Engine.
