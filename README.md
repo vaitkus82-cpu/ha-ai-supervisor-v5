@@ -1,4 +1,5 @@
 # AI Supervisor V5 Connector
 
 Home Assistant connector for the split AI Supervisor V5 architecture.
-The analysis engine runs on a Windows mini PC; this Home Assistant app provides controlled project access, pairing, validation, backup and guarded writes.
+
+Version **5.0.0-alpha3** adds current-state and entity/device/area registry inventory through the Home Assistant WebSocket API, clear configuration validation, and confidence-aware problem analysis when used with the Alpha3 Windows Engine.

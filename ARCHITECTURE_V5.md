@@ -37,3 +37,8 @@ Known secret patterns and `!secret` references are redacted before transfer.
 8. Run the Home Assistant configuration check.
 9. Restore all original files automatically if the check fails.
 10. Never restart Home Assistant automatically.
+
+
+## Alpha3 inventory
+
+The Connector uses the Home Assistant WebSocket proxy to collect current states and compact entity, device and area registry records. Hardware identifiers, network connections, serial numbers and credentials are not included. The Engine classifies findings as confirmed, likely conflicts or unverified.

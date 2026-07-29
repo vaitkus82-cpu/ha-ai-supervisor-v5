@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.0.0-alpha3
+
+- Added Home Assistant WebSocket inventory collection for current states.
+- Added compact entity, device and area registry snapshots.
+- Excluded device identifiers, connections, serial numbers and credentials from snapshots.
+- Normalised successful Home Assistant configuration checks to a clear `valid` result.
+- Added inventory completeness and registry counts to status and UI.
+- Added problem confidence categories for the Alpha3 Windows Engine.
+
 ## 5.0.0-alpha2
 
 - Configuration validation now uses the Supervisor `/core/check` endpoint with a Core REST fallback.

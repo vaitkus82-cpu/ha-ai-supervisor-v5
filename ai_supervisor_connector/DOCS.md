@@ -13,7 +13,7 @@
 
 The option `allow_package_writes` is disabled by default. Enable it only after read-only scanning and proposal generation work correctly.
 
-Alpha1 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum of three files can be included in one transaction. Every transaction requires:
+Alpha3 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum of three files can be included in one transaction. Every transaction requires:
 
 - exact typed confirmation;
 - a Home Assistant partial backup;
@@ -22,3 +22,8 @@ Alpha1 writes only `.yaml` or `.yml` files under `/config/packages/`. A maximum 
 - a successful Home Assistant configuration check.
 
 Home Assistant is not restarted automatically.
+
+
+## Alpha3
+
+After pairing, use **Nuskaityti ir perduoti**. A complete snapshot should show live entity states plus entity, device and area registry counts. Missing-entity findings are generated only when the entity registry was retrieved successfully.

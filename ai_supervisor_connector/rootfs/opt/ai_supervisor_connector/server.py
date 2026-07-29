@@ -22,6 +22,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+import websocket
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha2"
+APP_VERSION = "5.0.0-alpha3"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -44,6 +46,7 @@ LOCAL_BACKUP_DIR = DATA_DIR / "file_backups"
 HA_CONFIG_DIR = Path(os.environ.get("HOMEASSISTANT_CONFIG_DIR", "/homeassistant"))
 HA_BASE_URL = os.environ.get("HA_BASE_URL", "http://supervisor/core/api").rstrip("/")
 SUPERVISOR_BASE_URL = os.environ.get("SUPERVISOR_BASE_URL", "http://supervisor").rstrip("/")
+HA_WS_URL = os.environ.get("HA_WS_URL", "ws://supervisor/core/websocket")
 TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 MAX_BODY = 2 * 1024 * 1024
 MAX_FILES = 600
@@ -239,28 +242,105 @@ class HAClient:
         return value if isinstance(value, list) else []
 
     def check_config(self) -> dict[str, Any]:
-        """Run the configuration check through the Supervisor API.
-
-        The Supervisor /core/check endpoint is intended for apps and is more
-        reliable than routing an admin-only Core REST endpoint through the
-        Home Assistant API proxy. A Core REST fallback is kept for compatibility.
-        """
+        """Run and normalise a Home Assistant configuration check."""
         supervisor_error: Exception | None = None
         try:
+            # SupervisorClient unwraps a successful {result: ok, data: ...}
+            # response. An empty data object is therefore still a successful
+            # configuration check.
             value = SupervisorClient().request("POST", "/core/check", {}, timeout=180)
-            return value if isinstance(value, dict) else {"result": "unknown", "raw": value}
+            return {
+                "result": "valid",
+                "source": "supervisor/core/check",
+                "message": "Home Assistant configuration is valid.",
+                "details": value if isinstance(value, dict) else {"raw": value},
+            }
         except APIError as exc:
             supervisor_error = exc
             LOGGER.warning("Supervisor configuration check failed, trying Core REST fallback: %s", exc)
 
         try:
             value = self.request("POST", "/config/core/check_config", None, timeout=180)
-            return value if isinstance(value, dict) else {"result": "unknown", "raw": value}
+            if isinstance(value, dict):
+                result = str(value.get("result", "")).lower()
+                if result == "valid" or value.get("valid") is True:
+                    return {
+                        "result": "valid",
+                        "source": "core-rest",
+                        "message": "Home Assistant configuration is valid.",
+                        "details": value,
+                    }
+                return {
+                    "result": "invalid",
+                    "source": "core-rest",
+                    "message": str(value.get("errors") or value.get("message") or value),
+                    "details": value,
+                }
+            return {"result": "unknown", "source": "core-rest", "raw": value}
         except APIError as core_exc:
             raise APIError(
                 f"Configuration check failed via Supervisor ({supervisor_error}) "
                 f"and Core REST API ({core_exc})"
             ) from core_exc
+
+
+class HAWebSocketClient:
+    """Small synchronous client for the Home Assistant WebSocket proxy."""
+
+    def call_many(
+        self,
+        commands: list[tuple[str, dict[str, Any]]],
+        *,
+        timeout: int = 45,
+    ) -> tuple[dict[str, Any], list[str]]:
+        if not TOKEN:
+            raise APIError("SUPERVISOR_TOKEN is unavailable")
+        results: dict[str, Any] = {}
+        warnings: list[str] = []
+        sock = None
+        try:
+            sock = websocket.create_connection(
+                HA_WS_URL,
+                timeout=timeout,
+                header=[f"User-Agent: ai-supervisor-v5-connector/{APP_VERSION}"],
+            )
+            hello = json.loads(sock.recv())
+            if hello.get("type") != "auth_required":
+                raise APIError(f"Unexpected WebSocket greeting: {hello}")
+            sock.send(json.dumps({"type": "auth", "access_token": TOKEN}))
+            auth = json.loads(sock.recv())
+            if auth.get("type") != "auth_ok":
+                raise APIError(str(auth.get("message") or "Home Assistant WebSocket authentication failed"))
+
+            pending: dict[int, str] = {}
+            for number, (name, command) in enumerate(commands, start=1):
+                payload = {"id": number, **command}
+                pending[number] = name
+                sock.send(json.dumps(payload))
+
+            while pending:
+                message = json.loads(sock.recv())
+                if message.get("type") != "result":
+                    continue
+                message_id = message.get("id")
+                if message_id not in pending:
+                    continue
+                name = pending.pop(message_id)
+                if message.get("success") is True:
+                    results[name] = message.get("result")
+                else:
+                    error = message.get("error") or {}
+                    detail = error.get("message") if isinstance(error, dict) else str(error)
+                    warnings.append(f"WebSocket {name}: {detail or 'command failed'}")
+        except (websocket.WebSocketException, OSError, ValueError, json.JSONDecodeError) as exc:
+            raise APIError(f"Home Assistant WebSocket unavailable: {exc}") from exc
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+        return results, warnings
 
 
 class SupervisorClient:
@@ -390,6 +470,109 @@ def compact_state(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compact_entity_registry(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "entity_id": str(item.get("entity_id", "")),
+        "platform": item.get("platform"),
+        "device_id": item.get("device_id"),
+        "area_id": item.get("area_id"),
+        "disabled_by": item.get("disabled_by"),
+        "hidden_by": item.get("hidden_by"),
+        "name": item.get("name"),
+        "original_name": item.get("original_name"),
+        "aliases": item.get("aliases") if isinstance(item.get("aliases"), list) else [],
+        "labels": item.get("labels") if isinstance(item.get("labels"), list) else [],
+    }
+
+
+def compact_device_registry(item: dict[str, Any]) -> dict[str, Any]:
+    # Deliberately omit identifiers, connections and serial numbers.
+    return {
+        "id": str(item.get("id", "")),
+        "name": item.get("name"),
+        "name_by_user": item.get("name_by_user"),
+        "manufacturer": item.get("manufacturer"),
+        "model": item.get("model"),
+        "model_id": item.get("model_id"),
+        "area_id": item.get("area_id"),
+        "disabled_by": item.get("disabled_by"),
+        "via_device_id": item.get("via_device_id"),
+        "labels": item.get("labels") if isinstance(item.get("labels"), list) else [],
+    }
+
+
+def compact_area_registry(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "area_id": str(item.get("area_id", "")),
+        "name": item.get("name"),
+        "floor_id": item.get("floor_id"),
+        "aliases": item.get("aliases") if isinstance(item.get("aliases"), list) else [],
+        "labels": item.get("labels") if isinstance(item.get("labels"), list) else [],
+    }
+
+
+def collect_home_assistant_inventory() -> dict[str, Any]:
+    commands = [
+        ("states", {"type": "get_states"}),
+        ("config", {"type": "get_config"}),
+        ("entity_registry", {"type": "config/entity_registry/list"}),
+        ("device_registry", {"type": "config/device_registry/list"}),
+        ("area_registry", {"type": "config/area_registry/list"}),
+    ]
+    results: dict[str, Any] = {}
+    warnings: list[str] = []
+    try:
+        results, warnings = HAWebSocketClient().call_many(commands)
+    except APIError as exc:
+        warnings.append(str(exc))
+
+    states_raw = results.get("states") if isinstance(results.get("states"), list) else []
+    config = results.get("config") if isinstance(results.get("config"), dict) else {}
+    entity_raw = results.get("entity_registry") if isinstance(results.get("entity_registry"), list) else []
+    device_raw = results.get("device_registry") if isinstance(results.get("device_registry"), list) else []
+    area_raw = results.get("area_registry") if isinstance(results.get("area_registry"), list) else []
+
+    # REST remains a fallback for older or temporarily unavailable WebSocket APIs.
+    client = HAClient()
+    if not states_raw:
+        try:
+            states_raw = client.states()
+        except APIError as exc:
+            warnings.append(str(exc))
+    if not config:
+        try:
+            config = client.config()
+        except APIError as exc:
+            warnings.append(str(exc))
+
+    states = [compact_state(item) for item in states_raw if isinstance(item, dict)]
+    entity_registry = [compact_entity_registry(item) for item in entity_raw if isinstance(item, dict) and item.get("entity_id")]
+    device_registry = [compact_device_registry(item) for item in device_raw if isinstance(item, dict) and item.get("id")]
+    area_registry = [compact_area_registry(item) for item in area_raw if isinstance(item, dict) and item.get("area_id")]
+    inventory_status = {
+        "states": "complete" if states else "unavailable",
+        "entity_registry": "complete" if "entity_registry" in results else "unavailable",
+        "device_registry": "complete" if "device_registry" in results else "unavailable",
+        "area_registry": "complete" if "area_registry" in results else "unavailable",
+    }
+    if inventory_status["entity_registry"] == "complete":
+        entity_validation = "complete"
+    elif states:
+        entity_validation = "partial"
+    else:
+        entity_validation = "unavailable"
+    return {
+        "states": states,
+        "config": config,
+        "entity_registry": entity_registry,
+        "device_registry": device_registry,
+        "area_registry": area_registry,
+        "inventory_status": inventory_status,
+        "entity_validation": entity_validation,
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+
+
 def build_snapshot() -> dict[str, Any]:
     options = load_options()
     limit = options["max_snapshot_mb"] * 1024 * 1024
@@ -424,22 +607,12 @@ def build_snapshot() -> dict[str, Any]:
             }
         )
         total += len(clean.encode("utf-8"))
-    client = HAClient()
-    api_warnings: list[str] = []
-    states: list[dict[str, Any]] = []
-    config: dict[str, Any] = {}
-    try:
-        states = [compact_state(item) for item in client.states()]
-    except APIError as exc:
-        LOGGER.warning("State collection failed; continuing with file-only snapshot: %s", exc)
-        api_warnings.append(str(exc))
-    try:
-        config = client.config()
-    except APIError as exc:
-        LOGGER.warning("Core config collection failed; continuing without metadata: %s", exc)
-        api_warnings.append(str(exc))
+    inventory = collect_home_assistant_inventory()
+    states = inventory["states"]
+    config = inventory["config"]
+    api_warnings = inventory["warnings"]
     snapshot = {
-        "schema_version": 1,
+        "schema_version": 2,
         "snapshot_id": str(uuid.uuid4()),
         "created_at": utc_now(),
         "connector_version": APP_VERSION,
@@ -455,6 +628,14 @@ def build_snapshot() -> dict[str, Any]:
         "truncated": truncated,
         "states": states,
         "state_count": len(states),
+        "entity_registry": inventory["entity_registry"],
+        "entity_registry_count": len(inventory["entity_registry"]),
+        "device_registry": inventory["device_registry"],
+        "device_registry_count": len(inventory["device_registry"]),
+        "area_registry": inventory["area_registry"],
+        "area_registry_count": len(inventory["area_registry"]),
+        "inventory_status": inventory["inventory_status"],
+        "entity_validation": inventory["entity_validation"],
         "api_warnings": api_warnings,
         "policy": {
             "secrets_excluded": True,
@@ -752,6 +933,11 @@ def status() -> dict[str, Any]:
             "created_at": snapshot.get("created_at"),
             "file_count": snapshot.get("file_count", 0),
             "state_count": snapshot.get("state_count", 0),
+            "entity_registry_count": snapshot.get("entity_registry_count", 0),
+            "device_registry_count": snapshot.get("device_registry_count", 0),
+            "area_registry_count": snapshot.get("area_registry_count", 0),
+            "entity_validation": snapshot.get("entity_validation", "unavailable"),
+            "inventory_status": snapshot.get("inventory_status", {}),
             "truncated": snapshot.get("truncated", False),
             "api_warnings": snapshot.get("api_warnings", []),
         },
