@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha7"
+APP_VERSION = "5.0.0-alpha8"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -843,7 +843,7 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
     Home Assistant allows automations and scripts to be split into arbitrary
     files via !include / !include_dir_* directives. Those included files often
     have a root list or a root mapping without an ``automation:`` / ``script:``
-    wrapper. Alpha7 recognises those shapes and supplements them with exact raw-text Jinja references instead of only relying on standard
+    wrapper. Alpha8 recognises those shapes and supplements them with exact raw-text Jinja references instead of only relying on standard
     filenames such as automations.yaml and scripts.yaml.
     """
     components: list[dict[str, Any]] = []
@@ -1107,25 +1107,52 @@ def file_kind(path: Path) -> str:
 
 
 
+
+def _snapshot_priority(path: Path) -> tuple[int, str]:
+    """Prioritise Home Assistant YAML before optional source and documentation.
+
+    The old alphabetical walk could spend the snapshot byte budget on HACS or
+    custom-component source files before reaching packages/. Process mapping
+    requires the actual HA YAML, so root YAML and packages are always visited
+    first.
+    """
+    relative = safe_relative(path)
+    suffix = path.suffix.lower()
+    parts = Path(relative).parts
+    if suffix in {".yaml", ".yml"}:
+        if len(parts) == 1 or (parts and parts[0] in {"packages", "automations", "scripts", "scenes"}):
+            return (0, relative)
+        return (1, relative)
+    if suffix == ".json":
+        return (2, relative)
+    if suffix in {".py", ".js"}:
+        return (3, relative)
+    return (4, relative)
+
 def build_snapshot() -> dict[str, Any]:
     options = load_options()
     limit = options["max_snapshot_mb"] * 1024 * 1024
     files: list[dict[str, Any]] = []
     total = 0
-    truncated = False
-    for path in sorted(HA_CONFIG_DIR.rglob("*")):
-        if not path.is_file() or not include_file(path):
-            continue
+    omitted_budget = 0
+    omitted_large = 0
+    candidate_paths = [
+        path for path in HA_CONFIG_DIR.rglob("*")
+        if path.is_file() and include_file(path)
+    ]
+    candidate_paths.sort(key=_snapshot_priority)
+
+    for path in candidate_paths:
         try:
             size = path.stat().st_size
         except OSError:
             continue
         if size > MAX_FILE_BYTES:
-            files.append({"path": safe_relative(path), "size": size, "omitted": "file_too_large"})
+            omitted_large += 1
             continue
         if len(files) >= MAX_FILES or total + size > limit:
-            truncated = True
-            break
+            omitted_budget += 1
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -1138,9 +1165,30 @@ def build_snapshot() -> dict[str, Any]:
                 "sha256": sha256_text(text),
                 "content": clean,
                 "kind": file_kind(path),
+                "snapshot_priority": _snapshot_priority(path)[0],
             }
         )
         total += len(clean.encode("utf-8"))
+
+    package_yaml_count = sum(
+        1 for item in files
+        if item.get("kind") == "home_assistant_yaml"
+        and str(item.get("path", "")).replace("\\", "/").startswith("packages/")
+    )
+    yaml_count = sum(1 for item in files if item.get("kind") == "home_assistant_yaml")
+    truncated = bool(omitted_budget or omitted_large)
+    snapshot_scope = {
+        "candidate_files": len(candidate_paths),
+        "included_files": len(files),
+        "included_yaml_files": yaml_count,
+        "included_package_yaml_files": package_yaml_count,
+        "omitted_by_budget": omitted_budget,
+        "omitted_too_large": omitted_large,
+        "content_bytes": total,
+        "limit_bytes": limit,
+        "priority_policy": "root-and-packages-yaml-first",
+    }
+
     inventory = collect_home_assistant_inventory()
     components, component_warnings = collect_component_catalog(files)
     dashboards, dashboard_warnings = collect_lovelace_inventory()
@@ -1162,6 +1210,7 @@ def build_snapshot() -> dict[str, Any]:
         "file_count": len(files),
         "payload_bytes": total,
         "truncated": truncated,
+        "snapshot_scope": snapshot_scope,
         "states": states,
         "state_count": len(states),
         "entity_registry": inventory["entity_registry"],
@@ -1174,15 +1223,15 @@ def build_snapshot() -> dict[str, Any]:
         "component_count": len(components),
         "dashboards": dashboards,
         "dashboard_count": len(dashboards),
-        "inventory_status": inventory["inventory_status"],
         "entity_validation": inventory["entity_validation"],
+        "inventory_status": inventory["inventory_status"],
         "api_warnings": api_warnings,
-        "policy": {
+        "privacy": {
             "secrets_excluded": True,
             "storage_excluded": True,
             "database_excluded": True,
-            "lovelace_read_via_api": True,
-            "component_catalog_generated_locally": True,
+            "device_identifiers_excluded": True,
+            "device_connections_excluded": True,
             "write_scope": "packages/*.yaml only",
         },
     }
@@ -1190,46 +1239,12 @@ def build_snapshot() -> dict[str, Any]:
         write_json(LAST_SNAPSHOT_PATH, snapshot)
     return snapshot
 
-
-def pair_engine(incoming: dict[str, Any]) -> dict[str, Any]:
-    url = str(incoming.get("engine_url", "")).strip().rstrip("/")
-    code = str(incoming.get("pairing_code", "")).strip()
-    if not re.match(r"^https?://[^\s]+$", url):
-        raise ValueError("Enter a valid Engine address, for example http://192.168.1.50:8765")
-    if not re.fullmatch(r"\d{6}", code):
-        raise ValueError("Pairing code must contain 6 digits")
-    saved = read_json(SETTINGS_PATH, {})
-    write_json(SETTINGS_PATH, {**saved, "engine_url": url, "engine_token": ""})
-    response = EngineClient().request(
-        "POST",
-        "/v1/pair",
-        {"code": code, "connector_name": "Home Assistant AI Supervisor V5", "connector_version": APP_VERSION},
-        auth=False,
-        timeout=30,
-    )
-    token = str(response.get("token", ""))
-    if len(token) < 24:
-        raise APIError("Engine did not return a valid pairing token")
-    settings = {
-        "engine_url": url,
-        "engine_token": token,
-        "paired_at": utc_now(),
-        "engine_name": str(response.get("engine_name", "Windows Engine")),
-    }
-    write_json(SETTINGS_PATH, settings)
-    return {"ok": True, **public_settings()}
-
-
-def engine_health() -> dict[str, Any]:
-    try:
-        return EngineClient().request("GET", "/health", timeout=8, auth=False)
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
 def sync_snapshot() -> dict[str, Any]:
     snapshot = build_snapshot()
     result = EngineClient().request("POST", "/v1/snapshot", snapshot, timeout=180)
+    if isinstance(result, dict):
+        result["snapshot_scope"] = snapshot.get("snapshot_scope", {})
+        result["snapshot_truncated"] = bool(snapshot.get("truncated", False))
     with LOCK:
         write_json(LAST_ENGINE_RESULT_PATH, result)
     return result
@@ -1498,6 +1513,7 @@ def status() -> dict[str, Any]:
             "inventory_status": snapshot.get("inventory_status", {}),
             "truncated": snapshot.get("truncated", False),
             "api_warnings": snapshot.get("api_warnings", []),
+            "snapshot_scope": snapshot.get("snapshot_scope", {}),
         },
         "proposal_count": len(proposals) if isinstance(proposals, list) else 0,
         "write_policy": {

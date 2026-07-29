@@ -70,7 +70,7 @@
 
     <section class="card wide">
       <h2>3. Proceso žemėlapis</h2>
-      <div class="muted">Alpha7 pradeda nuo tikslių proceso entities, indeksuoja Jinja ir pasirinktinių laukų nuorodas visame package faile, o dashboardus naudoja tik kaip patvirtinimą.</div>
+      <div class="muted">Alpha8 pradeda nuo tikslių proceso entities, indeksuoja Jinja ir pasirinktinių laukų nuorodas visame package faile, o dashboardus naudoja tik kaip patvirtinimą.</div>
       <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
       <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
     </section>
@@ -79,7 +79,7 @@
       <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha7 prieš AI užklausą sukuria vietinį proceso žemėlapį iš įrenginių, registrų, package domenų, Jinja nuorodų ir Lovelace dashboardų. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha8 prieš AI užklausą sukuria vietinį proceso žemėlapį iš įrenginių, registrų, package domenų, Jinja nuorodų ir Lovelace dashboardų. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -140,6 +140,8 @@ async function loadStatus() {
       `<span class="pill">Zonos: ${esc(s.last_snapshot.area_registry_count)}</span>`,
       `<span class="pill">Komponentai: ${esc(s.last_snapshot.component_count||0)}</span>`,
       `<span class="pill">Dashboardai: ${esc(s.last_snapshot.dashboard_count||0)}</span>`,
+      `<span class="pill">Paketų YAML: ${esc((s.last_snapshot.snapshot_scope||{}).included_package_yaml_files||0)}</span>`,
+      `<span class="pill ${(s.last_snapshot.snapshot_scope||{}).omitted_by_budget?'warn':'ok'}">Snapshot: ${(s.last_snapshot.snapshot_scope||{}).omitted_by_budget?'ribotas':'pilnas'}</span>`,
       `<span class="pill ${s.write_policy.enabled?'warn':''}">Rašymas: ${s.write_policy.enabled?'įjungtas':'išjungtas'}</span>`
     ].join('');
     renderProblemOverview(s.engine||{});
@@ -160,7 +162,8 @@ async function syncSnapshot() {
     const pc=r.problem_counts||{};
     const problemText=`unikalių patvirtintų: ${pc.confirmed ?? 0}, galimų konfliktų: ${pc.likely_conflict ?? 0}, nepatikrintų: ${pc.unverified ?? 0}, paminėjimų: ${pc.occurrence_total ?? 0}`;
     const inventory=`gyvų entities: ${r.state_count ?? 0}, registro entities: ${r.entity_registry_count ?? 0}, įrenginių: ${r.device_registry_count ?? 0}, zonų: ${r.area_registry_count ?? 0}, komponentų: ${r.component_count ?? 0}, dashboardų: ${r.dashboard_count ?? 0}`;
-    message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, ${inventory}. Problemos — ${problemText}.${warnings}`, (r.api_warnings||[]).length ? 'notice' : 'success');
+    const scope=r.snapshot_scope||{}; const snapshotInfo=`paketų YAML: ${scope.included_package_yaml_files ?? 0}, YAML iš viso: ${scope.included_yaml_files ?? 0}${r.snapshot_truncated?', snapshot ribotas':''}`;
+    message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, ${inventory}, ${snapshotInfo}. Problemos — ${problemText}.${warnings}`, (r.api_warnings||[]).length ? 'notice' : 'success');
     renderProblemOverview(r);
     await loadAll();
   }

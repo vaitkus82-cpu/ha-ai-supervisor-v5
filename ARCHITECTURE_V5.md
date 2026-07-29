@@ -6,9 +6,9 @@ The Windows Engine analyses and generates proposals, but it does not receive a H
 
 ## Network
 
-Alpha7 is intended for a trusted local network. TCP port 8765 is opened only for the Windows Private firewall profile and local subnet. No router port forwarding is required or supported.
+Alpha8 is intended for a trusted local network. TCP port 8765 is opened only for the Windows Private firewall profile and local subnet. No router port forwarding is required or supported.
 
-## Alpha7 discovery pipeline
+## Alpha8 discovery pipeline
 
 1. Select exact physical process entities from the entity and device registries.
 2. Build an exact raw-text entity-to-file index for every allowed YAML file.

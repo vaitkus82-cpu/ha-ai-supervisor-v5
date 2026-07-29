@@ -1,8 +1,8 @@
-# AI Supervisor V5 Connector 5.0.0-alpha7
+# AI Supervisor V5 Connector 5.0.0-alpha8
 
-## What Alpha7 adds
+## What Alpha8 adds
 
-Alpha7 supplements strict YAML parsing with an exact raw-text catalogue. This captures entity references such as:
+Alpha8 supplements strict YAML parsing with an exact raw-text catalogue. This captures entity references such as:
 
 ```yaml
 cover_entity: cover.svetaine_terasa_curtain

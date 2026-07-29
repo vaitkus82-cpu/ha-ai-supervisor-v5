@@ -1,13 +1,18 @@
 # Changelog
 
+## 5.0.0-alpha8
+
+- Snapshot collection now prioritises root Home Assistant YAML and `packages/` before optional source code and documentation.
+- Reaching the byte budget no longer prevents later critical YAML files from being considered.
+- Adds snapshot-scope diagnostics: included YAML, included package YAML, omitted files and byte budget.
+- The dashboard shows package YAML coverage and whether the snapshot was limited.
+- Preserves all privacy exclusions and disabled-by-default writes.
+
 ## 5.0.0-alpha7
 
 - Added raw-text package section cataloguing alongside parsed YAML cataloguing.
-- Exact entity IDs are now collected from quoted Jinja, `states()`, `state_attr()`, custom variables such as `source_cover`, and custom fields such as `cover_entity`.
+- Exact entity IDs are collected from Jinja, custom variables and custom fields.
 - Added a conservative fallback when strict YAML parsing fails.
-- Parsed and raw component records are merged so automations, scripts and helpers retain complete references.
-- Added source and line-range metadata to component records.
-- Updated the process-map UI with file roles and exact-match explanations.
 
 ## 5.0.0-alpha6
 
