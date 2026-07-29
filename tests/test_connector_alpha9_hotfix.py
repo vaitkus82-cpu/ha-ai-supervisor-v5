@@ -42,11 +42,11 @@ class ConnectorAlpha9HotfixTests(unittest.TestCase):
             'engine_url': 'http://192.168.1.50:8765',
             'engine_token': 'token-value',
         }), encoding='utf-8')
-        self.mod.engine_health = lambda: {'ok': True, 'version': '5.0.0-alpha8'}
+        self.mod.engine_health = lambda: {'ok': True, 'version': '5.0.0-alpha10'}
         result = self.mod.status()
         self.assertTrue(result['ok'])
         self.assertTrue(result['engine']['ok'])
-        self.assertEqual('5.0.0-alpha9', result['connector_version'])
+        self.assertEqual('5.0.0-alpha10', result['connector_version'])
 
     def test_pair_engine_restored_and_persists_token(self):
         calls = []

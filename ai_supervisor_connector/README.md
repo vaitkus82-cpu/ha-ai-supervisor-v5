@@ -1,5 +1,5 @@
-# AI Supervisor V5 Connector 5.0.0-alpha9
+# AI Supervisor V5 Connector 5.0.0-alpha10
 
-Alpha8 adds exact package and Jinja reference indexing. It recognises entities inside normal YAML fields, quoted templates, `states()`, `state_attr()`, custom variables and custom fields. Parsed and raw-text component data are merged so package automations, scripts and helpers remain connected to their physical devices.
+Connector sukuria privatų Home Assistant snapshot ir perduoda jį Windows Engine.
 
-Writes remain disabled by default and are limited to confirmed `packages/*.yaml` transactions after backup and Home Assistant configuration validation.
+Alpha10 skirtas vienkrypčiam proceso žemėlapiui: nuo tikslių fizinio proceso entities pereinama tik į tiesioginius vykdymo komponentus ir jų apibrėžtas priklausomybes. Bendras helperis negali grąžinti žemėlapio atgal į visus kitus jo naudotojus.

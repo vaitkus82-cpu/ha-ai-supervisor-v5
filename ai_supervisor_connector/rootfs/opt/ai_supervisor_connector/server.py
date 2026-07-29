@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha9"
+APP_VERSION = "5.0.0-alpha10"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -631,7 +631,14 @@ def _raw_component_record(kind: str, key: str, block: str, path: str, line_start
     alias = alias_match.group(1).strip() if alias_match else clean_key
     component_entity = f"{kind}.{clean_key}" if kind in HELPER_DOMAINS | {"script", "scene"} and clean_key else ""
     services = sorted(set(RAW_SERVICE_RE.findall(block)))[:300]
-    references = sorted(set(ENTITY_RE.findall(block)) - set(services))[:2000]
+    reference_set = set(ENTITY_RE.findall(block)) - set(services)
+    for service in services:
+        if re.fullmatch(r"(?:script|scene)\.[a-z0-9_]+", service) and service not in {
+            "script.turn_on", "script.turn_off", "script.toggle", "script.reload",
+            "scene.turn_on", "scene.reload", "scene.apply", "scene.create",
+        }:
+            reference_set.add(service)
+    references = sorted(reference_set)[:2000]
     control_service_domains = {
         action.split(".", 1)[0]
         for action in services
@@ -843,7 +850,7 @@ def collect_component_catalog(files: list[dict[str, Any]]) -> tuple[list[dict[st
     Home Assistant allows automations and scripts to be split into arbitrary
     files via !include / !include_dir_* directives. Those included files often
     have a root list or a root mapping without an ``automation:`` / ``script:``
-    wrapper. Alpha8 recognises those shapes and supplements them with exact raw-text Jinja references instead of only relying on standard
+    wrapper. Alpha10 recognises those shapes and supplements them with exact raw-text Jinja references instead of only relying on standard
     filenames such as automations.yaml and scripts.yaml.
     """
     components: list[dict[str, Any]] = []

@@ -1,28 +1,25 @@
 # AI Supervisor V5 Connector
 
-Home Assistant side of the split AI Supervisor V5 architecture.
+Home Assistant dalis, skirta dviejų dalių AI Supervisor V5 architektūrai.
 
-Version **5.0.0-alpha9** makes the process map resilient to incomplete snapshots. The Connector sends Home Assistant root YAML and `packages/` first, before optional source code or documentation. The Windows Engine also rebuilds the exact YAML and package-component index directly from the received files before every process-map request.
-
-The Windows Engine builds this dependency graph:
+Versija **5.0.0-alpha10** suvienodina Connector ir Windows Engine versijas bei perduoda proceso duomenis vienkrypčiam žemėlapiui:
 
 ```text
-exact process entity
-  -> exact YAML/Jinja references
-  -> primary package
-  -> automations, scripts and helpers in that package
-  -> supporting readiness/diagnostics files
-  -> dashboard confirmation only
+tikslios proceso entities
+  -> tiesiogiai jas naudojantys komponentai
+  -> tų komponentų kviečiami skriptai ir helperių apibrėžimai
+  -> konkretūs YAML failai
+  -> dashboardo patvirtinimas
 ```
 
-## Safety
+Bendras helperis ar sensorius nebegali įtraukti visų kitų jį naudojančių klimato, CarPlay, roboto ar kitų procesų.
 
-- `secrets.yaml`, `.storage`, databases, logs and backups are excluded.
-- Lovelace is read through the API; raw `.storage` files are not transmitted.
-- Device identifiers, MAC addresses, serial numbers and credentials are omitted.
-- Writes are disabled by default.
-- This alpha can write only explicitly confirmed YAML transactions under `/config/packages/`.
-- Backup, configuration validation and automatic file rollback are mandatory.
-- Home Assistant is never restarted automatically.
+## Saugumas
 
-Keep the existing V4 app installed until V5 has been tested successfully.
+- `secrets.yaml`, `.storage`, duomenų bazės, žurnalai ir atsarginės kopijos neperduodami.
+- Lovelace skaitomas per API; neperduodami raw `.storage` failai.
+- MAC adresai, serijos numeriai, prisijungimo duomenys ir unikalūs identifikatoriai pašalinami.
+- Rašymas pagal nutylėjimą išjungtas.
+- Leidžiami tik aiškiai patvirtinti YAML pakeitimai po `/config/packages/`.
+- Privaloma atsarginė kopija, konfigūracijos patikra ir automatinis failų grąžinimas nesėkmės atveju.
+- Home Assistant automatiškai neperkraunamas.

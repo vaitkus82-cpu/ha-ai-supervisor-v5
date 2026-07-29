@@ -70,7 +70,7 @@
 
     <section class="card wide">
       <h2>3. Proceso žemėlapis</h2>
-      <div class="muted">Alpha8 pradeda nuo tikslių proceso entities, indeksuoja Jinja ir pasirinktinių laukų nuorodas visame package faile, o dashboardus naudoja tik kaip patvirtinimą.</div>
+      <div class="muted">Alpha10 naudoja vienkryptę grandinę: proceso entities → tiesioginiai komponentai → jų kviečiami skriptai ir helperių apibrėžimai. Bendras helperis nebeįtraukia visų kitų jo naudotojų.</div>
       <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
       <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
     </section>
@@ -79,7 +79,7 @@
       <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha8 prieš AI užklausą sukuria vietinį proceso žemėlapį iš įrenginių, registrų, package domenų, Jinja nuorodų ir Lovelace dashboardų. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha10 prieš AI užklausą sukuria apribotą vienkryptį proceso žemėlapį iš tikslių entities, vykdymo komponentų, jų tiesioginių priklausomybių ir Lovelace patvirtinimų. Įrašyti leidžiama tik į <code>packages/*.yaml</code>, tik po backup, patvirtinimo ir sėkmingos HA konfigūracijos patikros. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -187,6 +187,7 @@ function renderProcessMap(map={}) {
   const files=Array.isArray(map.files)?map.files:[];
   const fileDetails=Array.isArray(map.file_details)?map.file_details:[];
   const unresolved=Array.isArray(map.unresolved_entities)?map.unresolved_entities:[];
+  const diagnostics=map.diagnostics||{};
   const primary=entities.filter(e=>e.role==='primary');
   const dependencies=entities.filter(e=>e.role==='dependency');
   const contextEntities=entities.filter(e=>e.role==='device_context');
@@ -195,7 +196,7 @@ function renderProcessMap(map={}) {
   const componentHtml=components.slice(0,60).map(c=>`<details><summary>${esc(c.kind||'component')} · ${esc(c.name||c.key||c.component_id)}</summary><div class="muted">Įtraukta, nes: ${esc(c.included_because||'priklausomybės grandinė')}</div><div class="muted">Failas: ${esc(c.file||'-')}</div><div class="muted">Valdo: ${esc((c.control_targets||[]).join(', ')||'-')}</div><div class="muted">Naudoja: ${esc((c.references||[]).slice(0,60).join(', ')||'-')}</div></details>`).join('');
   const dashboardHtml=dashboards.slice(0,20).map(d=>`<details><summary>${esc(d.title||d.dashboard_id||'Dashboard')} · ${esc((d.matched_entities||[]).length)} susijusių entities</summary><div class="muted">Dashboardas tik patvirtina procesą ir jo neplečia.</div><div class="muted">${esc((d.matched_entities||[]).join(', '))}</div></details>`).join('');
   const fileHtml=fileDetails.length?fileDetails.map(f=>`<details><summary>${esc(f.role||'supporting')} · ${esc(f.path||'')}</summary><div class="muted">Įtraukta, nes: ${esc(f.included_because||'tiksli entity nuoroda')}</div><div class="muted">Pagrindinės entities: ${esc((f.matched_primary_entities||[]).join(', ')||'-')}</div><div class="muted">Visos proceso entities: ${esc((f.matched_entities||[]).join(', ')||'-')}</div><div class="muted">Paminėjimų: ${esc(f.occurrences||0)}</div></details>`).join(''):(files.length?`<div class="muted">${esc(files.join(', '))}</div>`:'');
-  $('processMap').innerHTML=`<div class="status"><span class="pill">Įrenginiai: ${esc(summary.devices||0)}</span><span class="pill">Pagrindinės entities: ${esc(summary.primary_entities||0)}</span><span class="pill">Priklausomybės: ${esc(summary.dependency_entities||0)}</span><span class="pill">Įrenginių kontekstas: ${esc(summary.device_context_entities||0)}</span><span class="pill">Automatikos: ${esc(summary.automations||0)}</span><span class="pill">Skriptai: ${esc(summary.scripts||0)}</span><span class="pill">Helperiai: ${esc(summary.helpers||0)}</span><span class="pill">Dashboardai: ${esc(summary.dashboards||0)}</span><span class="pill">Failai: ${esc(summary.files||0)}</span><span class="pill">Pagrindiniai failai: ${esc(summary.primary_files||0)}</span><span class="pill ${unresolved.length?'warn':'ok'}">Neišspręstos: ${esc(summary.unresolved_entities||0)}</span></div>${entityBlock('Pagrindinės proceso entities',primary)}${entityBlock('Proceso priklausomybės',dependencies)}${entityBlock('To paties įrenginio kontekstas (neplečia proceso)',contextEntities)}${deviceHtml?`<h3>Fiziniai įrenginiai</h3>${deviceHtml}`:''}${componentHtml?`<h3>Proceso komponentai</h3>${componentHtml}`:''}${dashboardHtml?`<h3>Dashboardo nuorodos</h3>${dashboardHtml}`:''}${fileHtml?`<h3>Susiję failai pagal vaidmenį</h3>${fileHtml}`:''}${unresolved.length?`<h3>Neišspręstos entity nuorodos</h3><div class="muted">${esc(unresolved.slice(0,100).join(', '))}</div>`:''}`;
+  $('processMap').innerHTML=`<div class="status"><span class="pill">Įrenginiai: ${esc(summary.devices||0)}</span><span class="pill">Pagrindinės entities: ${esc(summary.primary_entities||0)}</span><span class="pill">Priklausomybės: ${esc(summary.dependency_entities||0)}</span><span class="pill">Įrenginių kontekstas: ${esc(summary.device_context_entities||0)}</span><span class="pill">Automatikos: ${esc(summary.automations||0)}</span><span class="pill">Skriptai: ${esc(summary.scripts||0)}</span><span class="pill">Helperiai: ${esc(summary.helpers||0)}</span><span class="pill">Dashboardai: ${esc(summary.dashboards||0)}</span><span class="pill">Failai: ${esc(summary.files||0)}</span><span class="pill">Pagrindiniai failai: ${esc(summary.primary_files||0)}</span><span class="pill ${unresolved.length?'warn':'ok'}">Neišspręstos: ${esc(summary.unresolved_entities||0)}</span><span class="pill">Neplėsti bendri naudotojai: ${esc(diagnostics.suppressed_reverse_consumers||0)}</span></div>${entityBlock('Pagrindinės proceso entities',primary)}${entityBlock('Proceso priklausomybės',dependencies)}${entityBlock('To paties įrenginio kontekstas (neplečia proceso)',contextEntities)}${deviceHtml?`<h3>Fiziniai įrenginiai</h3>${deviceHtml}`:''}${componentHtml?`<h3>Proceso komponentai</h3>${componentHtml}`:''}${dashboardHtml?`<h3>Dashboardo nuorodos</h3>${dashboardHtml}`:''}${fileHtml?`<h3>Susiję failai pagal vaidmenį</h3>${fileHtml}`:''}${unresolved.length?`<h3>Neišspręstos entity nuorodos</h3><div class="muted">${esc(unresolved.slice(0,100).join(', '))}</div>`:''}`;
 }
 async function findProcessMap() {
   const b=event.currentTarget; busy(b,true,'Ieškoma...');
