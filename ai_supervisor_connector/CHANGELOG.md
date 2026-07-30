@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.0-alpha13.1
+
+- Updated the UI and package metadata for the Alpha13.1 Engine hotfix.
+- Proposal diagnostics now identify Alpha13.1 plan-scope and anchored-operation retries.
+- Root component wording was removed because package edits now require an exact automation, script or scene anchor.
+- Existing preflight, backup, final Home Assistant validation and rollback protections are unchanged.
+
 ## 5.0.0-alpha13
 
 - Added mandatory proposal preflight before an apply-ready change can be written.

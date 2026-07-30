@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha13"
+APP_VERSION = "5.0.0-alpha13.1"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -1637,7 +1637,7 @@ def apply_proposal(incoming: dict[str, Any]) -> dict[str, Any]:
     if proposal.get("apply_ready") is not True or bool(proposal.get("review_only")):
         raise ValueError("Proposal is review-only. Generate a new explicitly apply-ready proposal after review.")
     if not validation.get("preflight_valid") or not validation.get("apply_allowed"):
-        raise ValueError("Run a successful Alpha13 preflight immediately before applying this proposal.")
+        raise ValueError("Run a successful Alpha13.1 preflight immediately before applying this proposal.")
     if proposal.get("applied_at"):
         raise ValueError("Proposal has already been applied")
     changes = proposal.get("changes", [])

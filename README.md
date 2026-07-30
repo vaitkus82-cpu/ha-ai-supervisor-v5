@@ -2,13 +2,14 @@
 
 Home Assistant dalis, skirta dviejų dalių AI Supervisor V5 architektūrai.
 
-Versija **5.0.0-alpha13** išsaugo vienkryptį proceso žemėlapį, pririša struktūrines operacijas prie konkretaus YAML komponento ir prieš įrašymą reikalauja atskiros preflight patikros:
+Versija **5.0.0-alpha13.1** išsaugo vienkryptį proceso žemėlapį, pririša struktūrines operacijas prie konkretaus YAML komponento ir prieš įrašymą reikalauja atskiros preflight patikros:
 
 ```text
 aiškiai leisti packages/*.yaml failai
   -> vieną kartą sukurtas pataisymo planas
   -> po vieną failą operacijų generavimo etape
   -> konkretus automation/script/scene komponento inkaras
+  -> užklausos identifikatorių ir plano apimties kontrolė
   -> komponentui santykinės struktūrinės operacijos
   -> strict YAML patikra po kiekvienos operacijos
   -> tikras unified diff
@@ -21,7 +22,9 @@ aiškiai leisti packages/*.yaml failai
 - `secrets.yaml`, `.storage`, duomenų bazės, žurnalai ir atsarginės kopijos neperduodami.
 - Kodo generavimas be aiškaus `packages/*.yaml` leidžiamų failų sąrašo blokuojamas.
 - Operacijų etapui perduodamas tik vienas planuojamas failas; planas neperskaičiuojamas pakartojant operacijų generavimą.
-- Kiekviena operacija pririšama prie konkretaus `automation`, `script`, `scene` arba aiškiai leidžiamo root komponento.
+- Nuo užduoties nukrypęs planas automatiškai atmetamas ir generuojamas dar kartą pagal aiškius užklausos identifikatorius.
+- Po kiekvienos operacijos patvirtinama, kad už pasirinkto komponento ribų failas nepasikeitė.
+- Kiekviena operacija pririšama prie konkretaus `automation`, `script` arba `scene` komponento.
 - AI negali pats valdyti failo įtraukų; struktūrą ir komponento inkarą valdo Engine.
 - Nulinį arba kelis komponentus atitinkantis kelias blokuojamas.
 - Review-only pasiūlymai negali būti įrašomi.

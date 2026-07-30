@@ -33,7 +33,7 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha13", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0-alpha13.1", self.mod.APP_VERSION)
 
     def test_ui_does_not_claim_success_for_blocked_proposal(self):
         text = UI_PATH.read_text(encoding="utf-8")

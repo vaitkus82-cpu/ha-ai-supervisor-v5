@@ -15,7 +15,7 @@ seed entities -> direct execution components -> dependency definitions
 
 The graph does not traverse from a shared helper or sensor back to every consumer. Dashboards, readiness files, diagnostics files and same-device context cannot expand the execution graph.
 
-## Alpha13 proposal flow
+## Alpha13.1 proposal flow
 
 ```text
 allowed files

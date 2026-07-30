@@ -49,7 +49,7 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         self.assertIn("cover.close_cover", component["services"])
 
     def test_connector_version_is_alpha13(self):
-        self.assertEqual("5.0.0-alpha13", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0-alpha13.1", self.mod.APP_VERSION)
 
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@
 
     <section class="card wide">
       <h2>3. Proceso žemėlapis</h2>
-      <div class="muted">Alpha13 planą sudaro vieną kartą, o operacijų etapą prireikus automatiškai pakartoja. Kiekvienas keitimas pririšamas prie konkretaus automation, script arba scene ID, o operacijų generavimui perduodamas tik vienas suplanuotas failas.</div>
+      <div class="muted">Alpha13.1 planą sudaro vieną kartą, o operacijų etapą prireikus automatiškai pakartoja. Kiekvienas keitimas pririšamas prie konkretaus automation, script arba scene ID, o operacijų generavimui perduodamas tik vienas suplanuotas failas.</div>
       <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
       <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
     </section>
@@ -79,7 +79,7 @@
       <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha13 reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, generuoja operacijas po vieną failą ir tvirtina jas prie konkretaus komponento ID. Prieš įrašymo mygtuką privalomas atskiras preflight: sukuriamos laikinos dabartinių bei siūlomų failų kopijos, patikrinami visi paketų YAML failai ir aktyvi Home Assistant konfigūracija. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha13.1 reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, generuoja operacijas po vieną failą ir tvirtina jas prie konkretaus komponento ID. Prieš įrašymo mygtuką privalomas atskiras preflight: sukuriamos laikinos dabartinių bei siūlomų failų kopijos, patikrinami visi paketų YAML failai ir aktyvi Home Assistant konfigūracija. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -94,7 +94,7 @@
       <ul class="muted">
         <li>Iki 3 YAML failų vienoje operacijoje.</li>
         <li>Rašoma tik į <code>/config/packages/</code>.</li>
-        <li>Prieš rašymą privalomas sėkmingas Alpha13 preflight ir Home Assistant atsarginė kopija.</li>
+        <li>Prieš rašymą privalomas sėkmingas Alpha13.1 preflight ir Home Assistant atsarginė kopija.</li>
         <li>Failai atkuriami automatiškai, jeigu konfigūracijos patikra nepavyksta.</li>
         <li>Fiziniai įrenginiai nevaldomi ir Home Assistant automatiškai neperkraunamas.</li>
         <li>Entity, device ir area registrai perduodami be unikalių identifikatorių, MAC adresų ir prisijungimo duomenų.</li>
@@ -228,8 +228,10 @@ function proposalHtml(p) {
   const mapHtml=map.summary?`<details><summary>Proceso žemėlapis · ${esc(ms.entities||0)} entities · ${esc(ms.components||0)} komponentų · ${esc(ms.files||0)} failų</summary><div class="muted">Įrenginiai: ${esc(ms.devices||0)}, automatikos: ${esc(ms.automations||0)}, skriptai: ${esc(ms.scripts||0)}, helperiai: ${esc(ms.helpers||0)}, dashboardai: ${esc(ms.dashboards||0)}, neišspręstos nuorodos: ${esc(ms.unresolved_entities||0)}.</div><div class="muted">Failai: ${esc((map.files||[]).join(', '))}</div></details>`:'';
   const errors=(v.errors||[]).map(x=>`<li>${esc(x)}</li>`).join('');
   const gd=p.generation_diagnostics||{}; const attempts=gd.operation_attempts||{};
+  const planErrors=Array.isArray(gd.plan_errors)?gd.plan_errors:[];
+  const planRows=planErrors.length?`<div class="muted">Plano pakartojimai: ${esc(gd.plan_generation_attempt_limit||gd.plan_attempts||0)} · ${planErrors.map(esc).join(' | ')}</div>`:'';
   const attemptRows=Object.entries(attempts).map(([path,d])=>`<div class="muted">${esc(path)}: bandymų ${esc(d.attempts||0)}, ${d.succeeded?'pavyko':'nepavyko'}${(d.errors||[]).length?` · ${(d.errors||[]).map(esc).join(' | ')}`:''}</div>`).join('');
-  const diagnosticHtml=attemptRows?`<details><summary>Alpha13 operacijų diagnostika</summary>${attemptRows}</details>`:'';
+  const diagnosticHtml=(planRows||attemptRows)?`<details><summary>Alpha13.1 plano ir operacijų diagnostika</summary>${planRows}${attemptRows}</details>`:'';
   const pf=p.preflight||{};
   const preflightHtml=pf.status?`<div class="${pf.status==='passed'?'success':'error'}">Preflight: ${esc(pf.status)} · paketų YAML patikrinta: ${esc(pf.package_yaml_files_checked||0)}${(pf.package_errors||[]).length?` · ${esc((pf.package_errors||[]).join(' | '))}`:''}</div>`:'';
   const confirm=`PATVIRTINU ${id.slice(0,8).toUpperCase()}`;
