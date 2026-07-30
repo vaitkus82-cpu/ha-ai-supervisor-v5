@@ -58,7 +58,7 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         }
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha13.1", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0-alpha14", self.mod.APP_VERSION)
 
     def test_apply_ready_proposal_is_gated_until_preflight(self):
         validation = self.mod.validate_proposal(self.proposal())

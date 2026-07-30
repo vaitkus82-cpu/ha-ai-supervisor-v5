@@ -1,6 +1,12 @@
 # Changelog
 
-## 5.0.0-alpha13.1
+## 5.0.0-alpha14
+
+- Reissued the Alpha13.1 Connector code under an unambiguous increasing pre-release version.
+- Fixes Home Assistant showing the newer repository version while keeping the Update button disabled.
+- No functional YAML-generation or write-safety behavior changed from the Alpha13.1 hotfix.
+
+## 5.0.0-alpha14
 
 - Updated the UI and package metadata for the Alpha13.1 Engine hotfix.
 - Proposal diagnostics now identify Alpha13.1 plan-scope and anchored-operation retries.

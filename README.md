@@ -2,7 +2,7 @@
 
 Home Assistant dalis, skirta dviejų dalių AI Supervisor V5 architektūrai.
 
-Versija **5.0.0-alpha13.1** išsaugo vienkryptį proceso žemėlapį, pririša struktūrines operacijas prie konkretaus YAML komponento ir prieš įrašymą reikalauja atskiros preflight patikros:
+Versija **5.0.0-alpha14** išsaugo vienkryptį proceso žemėlapį, pririša struktūrines operacijas prie konkretaus YAML komponento ir prieš įrašymą reikalauja atskiros preflight patikros:
 
 ```text
 aiškiai leisti packages/*.yaml failai
