@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha12"
+APP_VERSION = "5.0.0-alpha13"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -43,6 +43,7 @@ LAST_ENGINE_RESULT_PATH = DATA_DIR / "last_engine_result.json"
 PROPOSALS_PATH = DATA_DIR / "proposals.json"
 APPLY_HISTORY_PATH = DATA_DIR / "apply_history.json"
 LOCAL_BACKUP_DIR = DATA_DIR / "file_backups"
+PREFLIGHT_DIR = DATA_DIR / "preflight"
 HA_CONFIG_DIR = Path(os.environ.get("HOMEASSISTANT_CONFIG_DIR", "/homeassistant"))
 HA_BASE_URL = os.environ.get("HA_BASE_URL", "http://supervisor/core/api").rstrip("/")
 SUPERVISOR_BASE_URL = os.environ.get("SUPERVISOR_BASE_URL", "http://supervisor").rstrip("/")
@@ -1386,6 +1387,21 @@ def risk_from_changes(changes: list[dict[str, Any]]) -> str:
     return "high" if domains & HIGH_RISK_DOMAINS else "medium"
 
 
+def proposal_fingerprint(proposal: dict[str, Any], validated: list[dict[str, Any]]) -> str:
+    payload = {
+        "proposal_id": str(proposal.get("proposal_id", "")),
+        "changes": [
+            {
+                "path": str(item.get("path", "")),
+                "current_sha256": str(item.get("current_sha256", "")),
+                "new_sha256": str(item.get("new_sha256", "")),
+            }
+            for item in sorted(validated, key=lambda value: str(value.get("path", "")))
+        ],
+    }
+    return sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
 def validate_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
     changes = proposal.get("changes")
@@ -1431,7 +1447,19 @@ def validate_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
                 errors.append(f"{item['path']}: change is outside the proposal allowlist")
     risk = risk_from_changes(changes if isinstance(changes, list) else [])
     structurally_valid = not errors and bool(validated)
-    apply_allowed = structurally_valid and proposal.get("apply_ready") is True and not bool(proposal.get("review_only"))
+    fingerprint = proposal_fingerprint(proposal, validated) if structurally_valid else ""
+    preflight = proposal.get("preflight") if isinstance(proposal.get("preflight"), dict) else {}
+    preflight_valid = bool(
+        structurally_valid
+        and preflight.get("status") == "passed"
+        and str(preflight.get("fingerprint", "")) == fingerprint
+    )
+    preflight_required = bool(
+        structurally_valid
+        and proposal.get("apply_ready") is True
+        and not bool(proposal.get("review_only"))
+    )
+    apply_allowed = preflight_required and preflight_valid
     return {
         "valid": structurally_valid,
         "apply_allowed": apply_allowed,
@@ -1441,8 +1469,132 @@ def validate_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
         "connector_risk": risk,
         "write_scope": "packages/ only",
         "allowed_files": sorted(allowed_set),
+        "proposal_fingerprint": fingerprint,
+        "preflight_required": preflight_required,
+        "preflight_valid": preflight_valid,
+        "preflight_status": str(preflight.get("status", "not_run")),
     }
 
+
+def _iter_package_yaml_files() -> list[Path]:
+    package_root = HA_CONFIG_DIR / "packages"
+    if not package_root.exists():
+        return []
+    files = list(package_root.rglob("*.yaml")) + list(package_root.rglob("*.yml"))
+    return sorted(set(path.resolve() for path in files))
+
+
+def preflight_proposal(incoming: dict[str, Any]) -> dict[str, Any]:
+    proposal_id = str(incoming.get("proposal_id", "")).strip()
+    if not proposal_id:
+        raise ValueError("proposal_id is required")
+    proposal = find_proposal(proposal_id)
+    validation = validate_proposal(proposal)
+    if not validation["valid"]:
+        raise ValueError("Proposal is blocked: " + "; ".join(validation["errors"]))
+    if proposal.get("apply_ready") is not True or bool(proposal.get("review_only")):
+        raise ValueError("Proposal is review-only and cannot enter the write preflight")
+    changes = proposal.get("changes", [])
+    overrides: dict[str, str] = {}
+    stage_dir = PREFLIGHT_DIR / proposal_id
+    if stage_dir.exists():
+        shutil.rmtree(stage_dir)
+    current_dir = stage_dir / "current"
+    proposed_dir = stage_dir / "proposed"
+    current_dir.mkdir(parents=True, exist_ok=True)
+    proposed_dir.mkdir(parents=True, exist_ok=True)
+    staged_files: list[dict[str, Any]] = []
+    for item in changes:
+        relative, target = normalise_target_path(str(item.get("path", "")))
+        current = target.read_text(encoding="utf-8") if target.exists() else ""
+        expected = str(item.get("base_sha256", ""))
+        if expected and expected != sha256_text(current):
+            raise ValueError(f"{relative}: file changed after proposal generation")
+        proposed = str(item.get("new_content", ""))
+        strict_yaml_validate(proposed)
+        overrides[relative] = proposed
+        current_copy = current_dir / relative
+        proposed_copy = proposed_dir / relative
+        current_copy.parent.mkdir(parents=True, exist_ok=True)
+        proposed_copy.parent.mkdir(parents=True, exist_ok=True)
+        current_copy.write_text(current, encoding="utf-8")
+        proposed_copy.write_text(proposed, encoding="utf-8")
+        staged_files.append(
+            {
+                "path": relative,
+                "current_sha256": sha256_text(current),
+                "new_sha256": sha256_text(proposed),
+                "staged_path": proposed_copy.relative_to(stage_dir).as_posix(),
+            }
+        )
+
+    package_errors: list[str] = []
+    checked_package_files = 0
+    seen_paths: set[str] = set()
+    for package_file in _iter_package_yaml_files():
+        try:
+            relative = package_file.relative_to(HA_CONFIG_DIR.resolve()).as_posix()
+        except ValueError:
+            continue
+        seen_paths.add(relative)
+        content = overrides.get(relative)
+        if content is None:
+            try:
+                content = package_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                package_errors.append(f"{relative}: {exc}")
+                continue
+        try:
+            strict_yaml_validate(content)
+            checked_package_files += 1
+        except ValueError as exc:
+            package_errors.append(f"{relative}: {exc}")
+    for relative, content in overrides.items():
+        if relative in seen_paths:
+            continue
+        try:
+            strict_yaml_validate(content)
+            checked_package_files += 1
+        except ValueError as exc:
+            package_errors.append(f"{relative}: {exc}")
+
+    current_check: dict[str, Any]
+    try:
+        current_check = HAClient().check_config()
+    except Exception as exc:
+        current_check = {"result": "invalid", "message": str(exc), "source": "preflight"}
+    current_check_valid = current_check.get("result") == "valid" or (
+        current_check.get("result") is None and not current_check.get("errors")
+    )
+    fingerprint = proposal_fingerprint(proposal, validation["changes"])
+    passed = not package_errors and current_check_valid and bool(staged_files)
+    result = {
+        "status": "passed" if passed else "failed",
+        "proposal_id": proposal_id,
+        "created_at": utc_now(),
+        "fingerprint": fingerprint,
+        "stage_directory": str(stage_dir),
+        "staged_files": staged_files,
+        "package_yaml_files_checked": checked_package_files,
+        "package_errors": package_errors,
+        "current_home_assistant_check": current_check,
+        "current_home_assistant_check_valid": current_check_valid,
+        "staged_home_assistant_runtime_check": False,
+        "note": "Proposed files were validated in an isolated staging directory. The Home Assistant API check validates the currently active configuration; the final post-write check and automatic rollback remain mandatory.",
+    }
+    proposal["preflight"] = result
+    proposal["preflight_at"] = result["created_at"]
+    connector_validation = validate_proposal(proposal)
+    update_proposal(
+        proposal_id,
+        {
+            "preflight": result,
+            "preflight_at": result["created_at"],
+            "connector_validation": connector_validation,
+            "proposal_status": "valid" if connector_validation.get("valid") else "blocked",
+        },
+    )
+    return {**result, "connector_validation": connector_validation}
 
 def find_proposal(proposal_id: str) -> dict[str, Any]:
     items = read_json(PROPOSALS_PATH, [])
@@ -1482,8 +1634,10 @@ def apply_proposal(incoming: dict[str, Any]) -> dict[str, Any]:
     validation = validate_proposal(proposal)
     if not validation["valid"]:
         raise ValueError("Proposal is blocked: " + "; ".join(validation["errors"]))
-    if proposal.get("apply_ready") is not True or not validation.get("apply_allowed"):
+    if proposal.get("apply_ready") is not True or bool(proposal.get("review_only")):
         raise ValueError("Proposal is review-only. Generate a new explicitly apply-ready proposal after review.")
+    if not validation.get("preflight_valid") or not validation.get("apply_allowed"):
+        raise ValueError("Run a successful Alpha13 preflight immediately before applying this proposal.")
     if proposal.get("applied_at"):
         raise ValueError("Proposal has already been applied")
     changes = proposal.get("changes", [])
@@ -1595,6 +1749,7 @@ def status() -> dict[str, Any]:
             "backup_required": True,
             "confirmation_required": True,
             "configuration_check_required": True,
+            "preflight_required": True,
             "automatic_restart": False,
         },
     }
@@ -1670,6 +1825,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = get_process_map(str(incoming.get("query", "")))
             elif path == "/api/analyse":
                 result = analyse_process(str(incoming.get("query", "")))
+            elif path == "/api/preflight":
+                result = preflight_proposal(incoming)
             elif path == "/api/apply":
                 result = apply_proposal(incoming)
             elif path == "/api/check-config":

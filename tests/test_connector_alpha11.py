@@ -13,14 +13,14 @@ def load_server(data_dir: str, config_dir: str):
     os.environ["DATA_DIR"] = data_dir
     os.environ["HOMEASSISTANT_CONFIG_DIR"] = config_dir
     os.environ["SUPERVISOR_TOKEN"] = "test-token"
-    spec = importlib.util.spec_from_file_location("connector_alpha12_test", SERVER_PATH)
+    spec = importlib.util.spec_from_file_location("connector_alpha13_test", SERVER_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader
     spec.loader.exec_module(module)
     return module
 
 
-class ConnectorAlpha12Tests(unittest.TestCase):
+class ConnectorAlpha13Tests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.data = Path(self.temp.name) / "data"
@@ -55,7 +55,7 @@ class ConnectorAlpha12Tests(unittest.TestCase):
         }
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha12", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0-alpha13", self.mod.APP_VERSION)
 
     def test_review_only_proposal_is_valid_but_not_apply_allowed(self):
         validation = self.mod.validate_proposal(self.proposal(apply_ready=False, review_only=True))
@@ -63,10 +63,12 @@ class ConnectorAlpha12Tests(unittest.TestCase):
         self.assertFalse(validation["apply_allowed"])
         self.assertTrue(validation["review_only"])
 
-    def test_apply_ready_proposal_can_pass_connector_gate(self):
+    def test_apply_ready_proposal_requires_preflight(self):
         validation = self.mod.validate_proposal(self.proposal(apply_ready=True, review_only=False))
         self.assertTrue(validation["valid"])
-        self.assertTrue(validation["apply_allowed"])
+        self.assertTrue(validation["preflight_required"])
+        self.assertFalse(validation["preflight_valid"])
+        self.assertFalse(validation["apply_allowed"])
 
     def test_apply_rejects_review_only_before_backup(self):
         proposal = self.proposal(apply_ready=False, review_only=True)

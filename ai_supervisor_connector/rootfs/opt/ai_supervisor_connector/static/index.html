@@ -70,7 +70,7 @@
 
     <section class="card wide">
       <h2>3. Proceso žemėlapis</h2>
-      <div class="muted">Alpha12 naudoja dviejų etapų pataisymų generatorių: pirma sudaro trumpą planą, tada redaguoja konkrečius esamo YAML medžio mazgus. Įtraukas ir galutinį failą formuoja Engine, o bendras helperis nebeįtraukia visų kitų jo naudotojų.</div>
+      <div class="muted">Alpha13 planą sudaro vieną kartą, o operacijų etapą prireikus automatiškai pakartoja. Kiekvienas keitimas pririšamas prie konkretaus automation, script arba scene ID, o operacijų generavimui perduodamas tik vienas suplanuotas failas.</div>
       <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
       <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
     </section>
@@ -79,7 +79,7 @@
       <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha12 prieš kodo generavimą reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, kuria trumpą planą ir taiko struktūrines YAML operacijas į konkrečius esamus mazgus. Po kiekvienos operacijos visas failas iš naujo parsintas, tikrinami dubliuoti raktai, nepatvirtinti custom event ir galutinis struktūrinis validumas. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Alpha13 reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, generuoja operacijas po vieną failą ir tvirtina jas prie konkretaus komponento ID. Prieš įrašymo mygtuką privalomas atskiras preflight: sukuriamos laikinos dabartinių bei siūlomų failų kopijos, patikrinami visi paketų YAML failai ir aktyvi Home Assistant konfigūracija. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -94,7 +94,7 @@
       <ul class="muted">
         <li>Iki 3 YAML failų vienoje operacijoje.</li>
         <li>Rašoma tik į <code>/config/packages/</code>.</li>
-        <li>Prieš rašymą privaloma Home Assistant atsarginė kopija.</li>
+        <li>Prieš rašymą privalomas sėkmingas Alpha13 preflight ir Home Assistant atsarginė kopija.</li>
         <li>Failai atkuriami automatiškai, jeigu konfigūracijos patikra nepavyksta.</li>
         <li>Fiziniai įrenginiai nevaldomi ir Home Assistant automatiškai neperkraunamas.</li>
         <li>Entity, device ir area registrai perduodami be unikalių identifikatorių, MAC adresų ir prisijungimo duomenų.</li>
@@ -205,31 +205,74 @@ async function findProcessMap() {
 }
 async function analyse() {
   const b=event.currentTarget; busy(b,true,'AI analizuoja...');
-  try { const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})}); if(r.process_map) renderProcessMap(r.process_map); const v=r.connector_validation||{}; if(v.valid){ message('analyseResult',`Pasiūlymas patikrintas: ${r.proposal_id}. Rizika: ${r.risk_level || '-'}.`); } else { message('analyseResult',`Pasiūlymas užblokuotas: ${(v.errors||[]).join('; ') || 'nepraėjo struktūrinės patikros'}.`,'error'); } await loadProposals(); }
+  try {
+    const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})});
+    if(r.process_map) renderProcessMap(r.process_map);
+    const v=r.connector_validation||{};
+    if(v.valid){
+      const next=v.preflight_required?' Dabar atlikite preflight prieš įrašymą.':' Pasiūlymas skirtas peržiūrai.';
+      message('analyseResult',`Pasiūlymas patikrintas: ${r.proposal_id}. Rizika: ${r.risk_level || '-'}.${next}`);
+    } else {
+      message('analyseResult',`Pasiūlymas užblokuotas: ${(v.errors||[]).join('; ') || 'nepraėjo struktūrinės patikros'}.`,'error');
+    }
+    await loadProposals();
+  }
   catch(e){ message('analyseResult',e.message,'error'); } finally { busy(b,false); }
 }
 function proposalHtml(p) {
-  const v=p.connector_validation || {}; const valid=!!v.valid; const applyAllowed=!!v.apply_allowed; const id=p.proposal_id || '';
+  const v=p.connector_validation || {};
+  const valid=!!v.valid; const applyAllowed=!!v.apply_allowed; const preflightRequired=!!v.preflight_required; const preflightValid=!!v.preflight_valid; const id=p.proposal_id || '';
   const changes=Array.isArray(p.changes)?p.changes:[];
-  const changeHtml=changes.map(c=>`<details><summary>${esc(c.path)} — ${esc(c.reason || '')}</summary><div class="muted">Operacijų: ${esc(c.operation_count || 0)}</div><pre>${esc(c.diff || c.new_content || '')}</pre></details>`).join('');
+  const changeHtml=changes.map(c=>`<details><summary>${esc(c.path)} — ${esc(c.reason || '')}</summary><div class="muted">Komponentas: ${esc(c.component_kind || '-')} ${esc(c.component_id || '')} · operacijų: ${esc(c.operation_count || 0)}</div><pre>${esc(c.diff || c.new_content || '')}</pre></details>`).join('');
   const map=p.process_map||{}; const ms=map.summary||{};
   const mapHtml=map.summary?`<details><summary>Proceso žemėlapis · ${esc(ms.entities||0)} entities · ${esc(ms.components||0)} komponentų · ${esc(ms.files||0)} failų</summary><div class="muted">Įrenginiai: ${esc(ms.devices||0)}, automatikos: ${esc(ms.automations||0)}, skriptai: ${esc(ms.scripts||0)}, helperiai: ${esc(ms.helpers||0)}, dashboardai: ${esc(ms.dashboards||0)}, neišspręstos nuorodos: ${esc(ms.unresolved_entities||0)}.</div><div class="muted">Failai: ${esc((map.files||[]).join(', '))}</div></details>`:'';
   const errors=(v.errors||[]).map(x=>`<li>${esc(x)}</li>`).join('');
+  const gd=p.generation_diagnostics||{}; const attempts=gd.operation_attempts||{};
+  const attemptRows=Object.entries(attempts).map(([path,d])=>`<div class="muted">${esc(path)}: bandymų ${esc(d.attempts||0)}, ${d.succeeded?'pavyko':'nepavyko'}${(d.errors||[]).length?` · ${(d.errors||[]).map(esc).join(' | ')}`:''}</div>`).join('');
+  const diagnosticHtml=attemptRows?`<details><summary>Alpha13 operacijų diagnostika</summary>${attemptRows}</details>`:'';
+  const pf=p.preflight||{};
+  const preflightHtml=pf.status?`<div class="${pf.status==='passed'?'success':'error'}">Preflight: ${esc(pf.status)} · paketų YAML patikrinta: ${esc(pf.package_yaml_files_checked||0)}${(pf.package_errors||[]).length?` · ${esc((pf.package_errors||[]).join(' | '))}`:''}</div>`:'';
   const confirm=`PATVIRTINU ${id.slice(0,8).toUpperCase()}`;
+  const stateLabel=!valid?'Užblokuota':(applyAllowed?'Paruošta taikyti':(preflightRequired?(preflightValid?'Preflight atliktas':'Reikia preflight'):'Tik peržiūrai'));
+  const stateClass=!valid?'bad':(applyAllowed?'ok':(preflightRequired?'warn':''));
+  let actionHtml='';
+  if(p.applied_at){
+    actionHtml=`<div class="success">Pritaikyta ${esc(p.applied_at)}. HA automatiškai neperkrautas.</div>`;
+  } else if(applyAllowed){
+    actionHtml=`<label>Patvirtinimas</label><input id="confirm-${esc(id)}" placeholder="${esc(confirm)}"><button class="danger" onclick="applyProposal('${esc(id)}')">Patvirtinti ir įrašyti</button>`;
+  } else if(valid && preflightRequired){
+    actionHtml=`<button class="secondary" onclick="preflightProposal('${esc(id)}')">Patikrinti prieš įrašymą</button><div class="notice">Įrašymo mygtukas bus rodomas tik po sėkmingo preflight. Galutinis HA patikrinimas ir rollback atliekami dar kartą po įrašymo.</div>`;
+  } else if(valid){
+    actionHtml=`<div class="warn">Pasiūlymas skirtas tik peržiūrai. Norint taikyti, sugeneruokite naują aiškiai taikymui paruoštą pasiūlymą.</div>`;
+  }
   return `<div class="proposal">
-    <div class="status"><span class="pill">${esc(id)}</span><span class="pill ${valid?'ok':'bad'}">${valid?(applyAllowed?'Paruošta taikyti':'Tik peržiūrai'):'Užblokuota'}</span><span class="pill">Rizika: ${esc(v.connector_risk || p.risk_level || '-')}</span><span class="pill">Režimas: ${esc(p.generation_mode || 'analysis')}</span></div>
+    <div class="status"><span class="pill">${esc(id)}</span><span class="pill ${stateClass}">${esc(stateLabel)}</span><span class="pill">Rizika: ${esc(v.connector_risk || p.risk_level || '-')}</span><span class="pill">Režimas: ${esc(p.generation_mode || 'analysis')}</span></div>
     <h3>${esc(p.summary || 'Be santraukos')}</h3>
     <div class="muted">${esc((p.problems || []).join(' • '))}</div>
     ${mapHtml}
     ${errors?`<div class="error"><ul>${errors}</ul></div>`:''}
+    ${diagnosticHtml}
     ${changeHtml}
-    ${p.applied_at?`<div class="success">Pritaikyta ${esc(p.applied_at)}. HA automatiškai neperkrautas.</div>`:(applyAllowed?`<label>Patvirtinimas</label><input id="confirm-${esc(id)}" placeholder="${esc(confirm)}"><button class="danger" onclick="applyProposal('${esc(id)}')">Patvirtinti ir įrašyti</button>`:(valid?`<div class="warn">Pasiūlymas skirtas tik peržiūrai. Norint taikyti, sugeneruokite naują aiškiai taikymui paruoštą pasiūlymą.</div>`:''))}
+    ${preflightHtml}
+    ${actionHtml}
   </div>`;
 }
+
 async function loadProposals() {
   try { const items=await api('api/proposals'); $('proposals').innerHTML=items.length?items.map(proposalHtml).join(''):'<div class="muted">Pasiūlymų dar nėra.</div>'; }
   catch(e){ $('proposals').innerHTML=`<div class="error">${esc(e.message)}</div>`; }
 }
+async function preflightProposal(id) {
+  const b=event.currentTarget; busy(b,true,'Atliekamas preflight...');
+  try {
+    const r=await api('api/preflight',{method:'POST',body:JSON.stringify({proposal_id:id})});
+    const ok=r.status==='passed';
+    alert(ok?'Preflight pavyko. Dabar galima patvirtinti įrašymą.':`Preflight nepavyko: ${(r.package_errors||[]).join(' | ') || r.current_home_assistant_check?.message || 'patikra nepavyko'}`);
+    await loadProposals();
+  }
+  catch(e){ alert('Preflight nepavyko: '+e.message); } finally { busy(b,false); }
+}
+
 async function applyProposal(id) {
   const input=$(`confirm-${id}`); const b=event.currentTarget; busy(b,true,'Kuriama kopija ir tikrinama...');
   try { const r=await api('api/apply',{method:'POST',body:JSON.stringify({proposal_id:id,confirmation:input.value})}); alert(r.message || 'Pritaikyta'); await loadAll(); }

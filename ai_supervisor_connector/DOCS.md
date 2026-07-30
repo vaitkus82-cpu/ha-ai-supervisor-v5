@@ -1,4 +1,4 @@
-# AI Supervisor V5 Connector 5.0.0-alpha12
+# AI Supervisor V5 Connector 5.0.0-alpha13
 
 ## Proceso paieška
 
@@ -8,14 +8,26 @@
 4. Readiness ir diagnostics failai rodomi tik kaip informacinės nuorodos.
 5. Dashboardai procesą tik patvirtina ir jo neplečia.
 
-## Struktūriniai kodo pasiūlymai
+## Komponentu paremti kodo pasiūlymai
 
-- Užklausoje privaloma aiškiai įvardyti vieną–tris `packages/*.yaml` failus.
-- Pirma sukuriamas trumpas planas, po to Engine gauna struktūrines operacijas su tiksliu YAML keliu.
+- Užklausoje privaloma aiškiai įvardyti vieną ar kelis `packages/*.yaml` failus.
+- Pirma sukuriamas trumpas planas. Jis naudojamas ir tada, kai operacijų etapą reikia pakartoti.
+- Operacijų generavimo etape Engine modeliui perduoda tik vieną planuojamą failą.
+- Kiekvienas failo pakeitimas nurodo `component_kind` ir `component_id`.
+- Modelio kelias yra santykinis komponentui; tikrą `automation -> id`, `script -> key` arba `scene -> id` inkarą prideda Engine.
 - Įtrauką ir galutinį failo tekstą formuoja Engine, ne kalbos modelis.
 - Po kiekvienos operacijos atliekama strict YAML patikra.
-- Connector dar kartą patikrina galutinį YAML ir dubliuotus raktus prieš rodydamas taikymo galimybę.
+- Neteisingas, dviprasmis ar pakartotinai absoliutus komponento kelias blokuojamas.
 - `Pakeitimų netaikyk` sukuria review-only pasiūlymą: diff matomas, bet įrašymo mygtuko nėra.
-- Taikymui reikia naujo apply-ready pasiūlymo, įjungto `allow_package_writes`, tikslios patvirtinimo frazės, backup ir sėkmingos HA konfigūracijos patikros.
+
+## Preflight ir įrašymas
+
+- Apply-ready pasiūlymui Connector pirmiausia patikrina dabartinius failų hash ir visą pasiūlymą.
+- Dabartinės ir siūlomos failų kopijos sukuriamos tik `/data/preflight/<proposal_id>/`; aktyvūs HA failai šiame etape nekeičiami.
+- Visi `/config/packages/*.yaml` ir `*.yml` failai dar kartą parsinti, siūlomiems failams naudojant paruoštas kopijas.
+- Papildomai vykdoma aktyvios Home Assistant konfigūracijos patikra.
+- Sėkminga preflight būsena susiejama su pasiūlymo ir failų fingerprint. Pasikeitus šaltinio failui, preflight nebegalioja.
+- Tik po sėkmingos preflight patikros, įjungto `allow_package_writes` ir tikslios patvirtinimo frazės leidžiama pradėti įrašymą.
+- Prieš įrašymą sukuriama backup kopija. Po įrašymo vykdoma galutinė HA konfigūracijos patikra; nesėkmės atveju failai automatiškai grąžinami.
 
 Rašymas pagal nutylėjimą išjungtas ir ribojamas `/config/packages/*.yaml`.
