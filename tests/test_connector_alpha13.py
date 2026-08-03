@@ -58,7 +58,7 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         }
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha14", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0b1", self.mod.APP_VERSION)
 
     def test_apply_ready_proposal_is_gated_until_preflight(self):
         validation = self.mod.validate_proposal(self.proposal())
@@ -112,7 +112,7 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         self.assertIn("Patikrinti prieš įrašymą", text)
         self.assertIn("preflightProposal", text)
         self.assertIn("applyAllowed", text)
-        self.assertIn("Alpha13.1 plano ir operacijų diagnostika", text)
+        self.assertIn("Beta1 plano ir operacijų diagnostika", text)
 
 
 if __name__ == "__main__":

@@ -1,42 +1,22 @@
 # Changelog
 
-## 5.0.0-alpha14
+## 5.0.0b1 - Autonomous Lab
 
-- Reissued the Alpha13.1 Connector code under an unambiguous increasing pre-release version.
-- Fixes Home Assistant showing the newer repository version while keeping the Update button disabled.
-- No functional YAML-generation or write-safety behavior changed from the Alpha13.1 hotfix.
+- Added persisted background jobs for snapshot sync, Home Assistant configuration check, process map, AI analysis, preflight and apply.
+- The UI now starts long-running work and polls job status instead of keeping one long ingress HTTP request open.
+- Added authenticated best-effort incident reporting to the Windows Engine Autonomous Self Lab.
+- Background job failures, rejected requests, unhandled Connector errors and browser disconnects can be added to the laboratory incident queue.
+- Added Connector status for the autonomous laboratory.
+- Preserved package-only writes, mandatory preflight, backup, final Home Assistant validation, rollback and disabled automatic restart.
 
-## 5.0.0-alpha14
+## 5.0.0-alpha13.1
 
-- Updated the UI and package metadata for the Alpha13.1 Engine hotfix.
-- Proposal diagnostics now identify Alpha13.1 plan-scope and anchored-operation retries.
-- Root component wording was removed because package edits now require an exact automation, script or scene anchor.
-- Existing preflight, backup, final Home Assistant validation and rollback protections are unchanged.
+- Updated diagnostics for anchored-operation retries.
+- Package edits require an exact automation, script or scene anchor.
+- Existing preflight, backup, final Home Assistant validation and rollback protections remain unchanged.
 
 ## 5.0.0-alpha13
 
 - Added mandatory proposal preflight before an apply-ready change can be written.
-- Preflight creates isolated current and proposed file copies under the Connector data directory without modifying `/config`.
-- All package YAML files are parsed again with the proposed files used as overrides.
-- The proposal fingerprint binds a successful preflight to the exact current and proposed file hashes.
+- Preflight stages current and proposed files without modifying `/config`.
 - Any source-file change invalidates the previous preflight and blocks apply.
-- The active Home Assistant configuration check is run during preflight; final post-write HA validation and rollback remain mandatory.
-- The UI shows component anchors, operation retry diagnostics and preflight status.
-- The apply confirmation and write button remain hidden until preflight succeeds.
-
-## 5.0.0-alpha12
-
-- Added support for Engine structural-YAML proposal mode.
-- Blocked proposals are shown as blocked immediately instead of displaying a green success message first.
-- Proposal risk is normalised to the higher of Engine risk and Connector-computed risk.
-- The UI displays structural operation counts and the Engine-generated unified diff.
-- Preserved explicit allowlists, review-only states, strict YAML validation, backup, configuration check and rollback.
-
-## 5.0.0-alpha11
-
-- Added separate proposal states: blocked, review-only and apply-ready.
-- Added explicit allowlist verification and unified-diff display.
-
-## 5.0.0-alpha10
-
-- Added the one-way process graph and suppressed shared-helper reverse fan-out.

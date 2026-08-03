@@ -70,7 +70,7 @@
 
     <section class="card wide">
       <h2>3. Proceso žemėlapis</h2>
-      <div class="muted">Alpha13.1 planą sudaro vieną kartą, o operacijų etapą prireikus automatiškai pakartoja. Kiekvienas keitimas pririšamas prie konkretaus automation, script arba scene ID, o operacijų generavimui perduodamas tik vienas suplanuotas failas.</div>
+      <div class="muted">Beta1 planą sudaro vieną kartą, o operacijų etapą prireikus automatiškai pakartoja. Kiekvienas keitimas pririšamas prie konkretaus automation, script arba scene ID, o operacijų generavimui perduodamas tik vienas suplanuotas failas.</div>
       <button class="secondary" onclick="findProcessMap()">Rasti proceso žemėlapį</button>
       <div id="processMap" style="margin-top:10px" class="muted">Įrašyk užduotį žemiau ir paleisk proceso paiešką.</div>
     </section>
@@ -79,7 +79,7 @@
       <h2>4. Užduotis AI Supervisor</h2>
       <textarea id="query" placeholder="Pavyzdžiui: Surask visas užuolaidų proceso dalis, nustatyk konfliktus ir paruošk saugų pataisymą."></textarea>
       <button onclick="analyse()">Analizuoti ir parengti pasiūlymą</button>
-      <div class="notice">Alpha13.1 reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, generuoja operacijas po vieną failą ir tvirtina jas prie konkretaus komponento ID. Prieš įrašymo mygtuką privalomas atskiras preflight: sukuriamos laikinos dabartinių bei siūlomų failų kopijos, patikrinami visi paketų YAML failai ir aktyvi Home Assistant konfigūracija. Automatinis HA perkrovimas išjungtas.</div>
+      <div class="notice">Beta1 reikalauja aiškaus leidžiamų <code>packages/*.yaml</code> failų sąrašo, generuoja operacijas po vieną failą ir tvirtina jas prie konkretaus komponento ID. Prieš įrašymo mygtuką privalomas atskiras preflight: sukuriamos laikinos dabartinių bei siūlomų failų kopijos, patikrinami visi paketų YAML failai ir aktyvi Home Assistant konfigūracija. Automatinis HA perkrovimas išjungtas.</div>
       <div id="analyseResult"></div>
     </section>
 
@@ -94,7 +94,7 @@
       <ul class="muted">
         <li>Iki 3 YAML failų vienoje operacijoje.</li>
         <li>Rašoma tik į <code>/config/packages/</code>.</li>
-        <li>Prieš rašymą privalomas sėkmingas Alpha13.1 preflight ir Home Assistant atsarginė kopija.</li>
+        <li>Prieš rašymą privalomas sėkmingas Beta1 preflight ir Home Assistant atsarginė kopija.</li>
         <li>Failai atkuriami automatiškai, jeigu konfigūracijos patikra nepavyksta.</li>
         <li>Fiziniai įrenginiai nevaldomi ir Home Assistant automatiškai neperkraunamas.</li>
         <li>Entity, device ir area registrai perduodami be unikalių identifikatorių, MAC adresų ir prisijungimo duomenų.</li>
@@ -110,6 +110,19 @@ async function api(path, options={}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
   return data.result ?? data;
+}
+async function runJob(action, payload={}, progress=()=>{}) {
+  const started=await api('api/jobs/start',{method:'POST',body:JSON.stringify({action,payload})});
+  const jobId=started.job_id; const startedAt=Date.now();
+  for(let attempt=0; attempt<600; attempt++){
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const job=await api(`api/jobs/${encodeURIComponent(jobId)}`);
+    const seconds=Math.round((Date.now()-startedAt)/1000);
+    progress(job,seconds);
+    if(job.status==='completed') return job.result;
+    if(job.status==='failed') throw new Error(job.error||'Foninė užduotis nepavyko');
+  }
+  throw new Error('Foninė užduotis nebaigta per 15 minučių');
 }
 function message(id, text, type='success') { $(id).innerHTML = `<div class="${type}">${esc(text)}</div>`; }
 function busy(button, on, text='Vykdoma...') { if (!button) return; if (on) { button.dataset.old=button.textContent; button.textContent=text; button.disabled=true; } else { button.textContent=button.dataset.old || button.textContent; button.disabled=false; } }
@@ -142,6 +155,7 @@ async function loadStatus() {
       `<span class="pill">Dashboardai: ${esc(s.last_snapshot.dashboard_count||0)}</span>`,
       `<span class="pill">Paketų YAML: ${esc((s.last_snapshot.snapshot_scope||{}).included_package_yaml_files||0)}</span>`,
       `<span class="pill ${(s.last_snapshot.snapshot_scope||{}).omitted_by_budget?'warn':'ok'}">Snapshot: ${(s.last_snapshot.snapshot_scope||{}).omitted_by_budget?'ribotas':'pilnas'}</span>`,
+      `<span class="pill ${(s.self_lab||{}).enabled?'ok':'warn'}">Autonominis AI: ${(s.self_lab||{}).enabled?'įjungtas':'išjungtas'}</span>`,
       `<span class="pill ${s.write_policy.enabled?'warn':''}">Rašymas: ${s.write_policy.enabled?'įjungtas':'išjungtas'}</span>`
     ].join('');
     renderProblemOverview(s.engine||{});
@@ -155,28 +169,25 @@ async function pairEngine() {
   } catch(e){ message('pairResult',e.message,'error'); } finally { busy(b,false); }
 }
 async function syncSnapshot() {
-  const b=event.currentTarget; busy(b,true,'Nuskaitoma...');
+  const b=event.currentTarget; busy(b,true,'Nuskaitoma fone...');
   try {
-    const r=await api('api/sync',{method:'POST',body:'{}'});
+    const r=await runJob('sync',{},(_job,sec)=>{b.textContent=`Nuskaitoma... ${sec}s`;});
     const warnings=(r.api_warnings||[]).length ? ` Įspėjimai: ${(r.api_warnings||[]).join(' | ')}` : '';
     const pc=r.problem_counts||{};
     const problemText=`unikalių patvirtintų: ${pc.confirmed ?? 0}, galimų konfliktų: ${pc.likely_conflict ?? 0}, nepatikrintų: ${pc.unverified ?? 0}, paminėjimų: ${pc.occurrence_total ?? 0}`;
     const inventory=`gyvų entities: ${r.state_count ?? 0}, registro entities: ${r.entity_registry_count ?? 0}, įrenginių: ${r.device_registry_count ?? 0}, zonų: ${r.area_registry_count ?? 0}, komponentų: ${r.component_count ?? 0}, dashboardų: ${r.dashboard_count ?? 0}`;
     const scope=r.snapshot_scope||{}; const snapshotInfo=`paketų YAML: ${scope.included_package_yaml_files ?? 0}, YAML iš viso: ${scope.included_yaml_files ?? 0}${r.snapshot_truncated?', snapshot ribotas':''}`;
     message('syncResult',`Perduota. Failų: ${r.file_count ?? '-'}, procesų: ${r.process_count ?? '-'}, ${inventory}, ${snapshotInfo}. Problemos — ${problemText}.${warnings}`, (r.api_warnings||[]).length ? 'notice' : 'success');
-    renderProblemOverview(r);
-    await loadAll();
-  }
-  catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }
+    renderProblemOverview(r); await loadAll();
+  } catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }
 }
 async function checkConfig() {
-  const b=event.currentTarget; busy(b,true,'Tikrinama...');
+  const b=event.currentTarget; busy(b,true,'Tikrinama fone...');
   try {
-    const r=await api('api/check-config',{method:'POST',body:'{}'});
+    const r=await runJob('check_config',{},(_job,sec)=>{b.textContent=`Tikrinama... ${sec}s`;});
     const valid=r.result==='valid';
     message('syncResult', valid ? 'Home Assistant konfigūracija tinkama.' : `Home Assistant konfigūracija netinkama: ${r.message || JSON.stringify(r)}`, valid ? 'success' : 'error');
-  }
-  catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }
+  } catch(e){ message('syncResult',e.message,'error'); } finally { busy(b,false); }
 }
 function renderProcessMap(map={}) {
   const summary=map.summary||{};
@@ -199,14 +210,14 @@ function renderProcessMap(map={}) {
   $('processMap').innerHTML=`<div class="status"><span class="pill">Įrenginiai: ${esc(summary.devices||0)}</span><span class="pill">Pagrindinės entities: ${esc(summary.primary_entities||0)}</span><span class="pill">Priklausomybės: ${esc(summary.dependency_entities||0)}</span><span class="pill">Įrenginių kontekstas: ${esc(summary.device_context_entities||0)}</span><span class="pill">Automatikos: ${esc(summary.automations||0)}</span><span class="pill">Skriptai: ${esc(summary.scripts||0)}</span><span class="pill">Helperiai: ${esc(summary.helpers||0)}</span><span class="pill">Dashboardai: ${esc(summary.dashboards||0)}</span><span class="pill">Failai: ${esc(summary.files||0)}</span><span class="pill">Pagrindiniai failai: ${esc(summary.primary_files||0)}</span><span class="pill ${unresolved.length?'warn':'ok'}">Neišspręstos: ${esc(summary.unresolved_entities||0)}</span><span class="pill">Neplėsti bendri naudotojai: ${esc(diagnostics.suppressed_reverse_consumers||0)}</span></div>${entityBlock('Pagrindinės proceso entities',primary)}${entityBlock('Proceso priklausomybės',dependencies)}${entityBlock('To paties įrenginio kontekstas (neplečia proceso)',contextEntities)}${deviceHtml?`<h3>Fiziniai įrenginiai</h3>${deviceHtml}`:''}${componentHtml?`<h3>Proceso komponentai</h3>${componentHtml}`:''}${dashboardHtml?`<h3>Dashboardo nuorodos</h3>${dashboardHtml}`:''}${fileHtml?`<h3>Susiję failai pagal vaidmenį</h3>${fileHtml}`:''}${unresolved.length?`<h3>Neišspręstos entity nuorodos</h3><div class="muted">${esc(unresolved.slice(0,100).join(', '))}</div>`:''}`;
 }
 async function findProcessMap() {
-  const b=event.currentTarget; busy(b,true,'Ieškoma...');
-  try { const r=await api('api/process-map',{method:'POST',body:JSON.stringify({query:$('query').value})}); renderProcessMap(r); }
+  const b=event.currentTarget; busy(b,true,'Ieškoma fone...');
+  try { const r=await runJob('process_map',{query:$('query').value},(_job,sec)=>{b.textContent=`Ieškoma... ${sec}s`;}); renderProcessMap(r); }
   catch(e){ $('processMap').innerHTML=`<div class="error">${esc(e.message)}</div>`; } finally { busy(b,false); }
 }
 async function analyse() {
-  const b=event.currentTarget; busy(b,true,'AI analizuoja...');
+  const b=event.currentTarget; busy(b,true,'AI analizuoja fone...');
   try {
-    const r=await api('api/analyse',{method:'POST',body:JSON.stringify({query:$('query').value})});
+    const r=await runJob('analyse',{query:$('query').value},(_job,sec)=>{b.textContent=`AI analizuoja... ${sec}s`;});
     if(r.process_map) renderProcessMap(r.process_map);
     const v=r.connector_validation||{};
     if(v.valid){
@@ -216,8 +227,7 @@ async function analyse() {
       message('analyseResult',`Pasiūlymas užblokuotas: ${(v.errors||[]).join('; ') || 'nepraėjo struktūrinės patikros'}.`,'error');
     }
     await loadProposals();
-  }
-  catch(e){ message('analyseResult',e.message,'error'); } finally { busy(b,false); }
+  } catch(e){ message('analyseResult',e.message,'error'); } finally { busy(b,false); }
 }
 function proposalHtml(p) {
   const v=p.connector_validation || {};
@@ -231,7 +241,7 @@ function proposalHtml(p) {
   const planErrors=Array.isArray(gd.plan_errors)?gd.plan_errors:[];
   const planRows=planErrors.length?`<div class="muted">Plano pakartojimai: ${esc(gd.plan_generation_attempt_limit||gd.plan_attempts||0)} · ${planErrors.map(esc).join(' | ')}</div>`:'';
   const attemptRows=Object.entries(attempts).map(([path,d])=>`<div class="muted">${esc(path)}: bandymų ${esc(d.attempts||0)}, ${d.succeeded?'pavyko':'nepavyko'}${(d.errors||[]).length?` · ${(d.errors||[]).map(esc).join(' | ')}`:''}</div>`).join('');
-  const diagnosticHtml=(planRows||attemptRows)?`<details><summary>Alpha13.1 plano ir operacijų diagnostika</summary>${planRows}${attemptRows}</details>`:'';
+  const diagnosticHtml=(planRows||attemptRows)?`<details><summary>Beta1 plano ir operacijų diagnostika</summary>${planRows}${attemptRows}</details>`:'';
   const pf=p.preflight||{};
   const preflightHtml=pf.status?`<div class="${pf.status==='passed'?'success':'error'}">Preflight: ${esc(pf.status)} · paketų YAML patikrinta: ${esc(pf.package_yaml_files_checked||0)}${(pf.package_errors||[]).length?` · ${esc((pf.package_errors||[]).join(' | '))}`:''}</div>`:'';
   const confirm=`PATVIRTINU ${id.slice(0,8).toUpperCase()}`;
@@ -265,19 +275,18 @@ async function loadProposals() {
   catch(e){ $('proposals').innerHTML=`<div class="error">${esc(e.message)}</div>`; }
 }
 async function preflightProposal(id) {
-  const b=event.currentTarget; busy(b,true,'Atliekamas preflight...');
+  const b=event.currentTarget; busy(b,true,'Preflight vykdomas fone...');
   try {
-    const r=await api('api/preflight',{method:'POST',body:JSON.stringify({proposal_id:id})});
+    const r=await runJob('preflight',{proposal_id:id},(_job,sec)=>{b.textContent=`Preflight... ${sec}s`;});
     const ok=r.status==='passed';
     alert(ok?'Preflight pavyko. Dabar galima patvirtinti įrašymą.':`Preflight nepavyko: ${(r.package_errors||[]).join(' | ') || r.current_home_assistant_check?.message || 'patikra nepavyko'}`);
     await loadProposals();
-  }
-  catch(e){ alert('Preflight nepavyko: '+e.message); } finally { busy(b,false); }
+  } catch(e){ alert('Preflight nepavyko: '+e.message); } finally { busy(b,false); }
 }
 
 async function applyProposal(id) {
-  const input=$(`confirm-${id}`); const b=event.currentTarget; busy(b,true,'Kuriama kopija ir tikrinama...');
-  try { const r=await api('api/apply',{method:'POST',body:JSON.stringify({proposal_id:id,confirmation:input.value})}); alert(r.message || 'Pritaikyta'); await loadAll(); }
+  const input=$(`confirm-${id}`); const b=event.currentTarget; busy(b,true,'Kuriama kopija ir tikrinama fone...');
+  try { const r=await runJob('apply',{proposal_id:id,confirmation:input.value},(_job,sec)=>{b.textContent=`Taikoma... ${sec}s`;}); alert(r.message || 'Pritaikyta'); await loadAll(); }
   catch(e){ alert('Nepavyko: '+e.message); } finally { busy(b,false); }
 }
 async function loadAll(){ await Promise.all([loadStatus(),loadProposals()]); }

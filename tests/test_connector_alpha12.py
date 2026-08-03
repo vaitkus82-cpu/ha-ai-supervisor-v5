@@ -33,12 +33,12 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha14", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0b1", self.mod.APP_VERSION)
 
     def test_ui_does_not_claim_success_for_blocked_proposal(self):
         text = UI_PATH.read_text(encoding="utf-8")
         self.assertIn("Pasiūlymas užblokuotas", text)
-        self.assertIn("Alpha13", text)
+        self.assertIn("Beta1", text)
 
     def test_store_proposal_uses_higher_connector_risk(self):
         proposal = {

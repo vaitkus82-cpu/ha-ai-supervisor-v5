@@ -1,33 +1,34 @@
-# AI Supervisor V5 Connector 5.0.0-alpha14
+# AI Supervisor V5 Connector 5.0.0b1
 
-## Proceso paieška
+## Foninės užduotys
 
-1. Nustatomos tikslios pradinės proceso entities.
-2. Surandami jas tiesiogiai naudojantys automation/script komponentai.
-3. Sekami tik tų komponentų kviečiami skriptai, scenos ir helperių apibrėžimai.
-4. Readiness ir diagnostics failai rodomi tik kaip informacinės nuorodos.
-5. Dashboardai procesą tik patvirtina ir jo neplečia.
+Šios operacijos vykdomos atskirame Connector procese ir grąžina `job_id`:
 
-## Komponentu paremti kodo pasiūlymai
+- Home Assistant snapshot;
+- aktyvios konfigūracijos patikra;
+- proceso žemėlapis;
+- AI analizė ir pasiūlymas;
+- preflight;
+- patvirtintas įrašymas.
 
-- Užklausoje privaloma aiškiai įvardyti vieną ar kelis `packages/*.yaml` failus.
-- Pirma sukuriamas trumpas planas. Jis naudojamas ir tada, kai operacijų etapą reikia pakartoti.
-- Operacijų generavimo etape Engine modeliui perduoda tik vieną planuojamą failą.
-- Kiekvienas failo pakeitimas nurodo `component_kind` ir `component_id`.
-- Modelio kelias yra santykinis komponentui; tikrą `automation -> id`, `script -> key` arba `scene -> id` inkarą prideda Engine.
-- Įtrauką ir galutinį failo tekstą formuoja Engine, ne kalbos modelis.
-- Po kiekvienos operacijos atliekama strict YAML patikra.
-- Neteisingas, dviprasmis ar pakartotinai absoliutus komponento kelias blokuojamas.
-- `Pakeitimų netaikyk` sukuria review-only pasiūlymą: diff matomas, bet įrašymo mygtuko nėra.
+Sąsaja periodiškai skaito `/api/jobs/<job_id>`. Užbaigtas rezultatas arba klaida išsaugomi `/data/background_jobs.json`, todėl naršyklės ingress ryšio nutrūkimas nebeturi nutraukti pačios operacijos.
+
+## Komponentu paremti pasiūlymai
+
+- Užklausoje privaloma aiškiai įvardyti leidžiamus `packages/*.yaml` failus.
+- Planas sukuriamas vieną kartą, o operacijų etapas prireikus pakartojamas tam pačiam planui.
+- Kiekviena operacija pririšama prie konkretaus `automation`, `script` arba `scene` komponento.
+- Engine valdo YAML kelią, įtrauką, strict YAML patikrą ir unified diff.
+- Review-only pasiūlymai negali būti įrašomi.
 
 ## Preflight ir įrašymas
 
-- Apply-ready pasiūlymui Connector pirmiausia patikrina dabartinius failų hash ir visą pasiūlymą.
-- Dabartinės ir siūlomos failų kopijos sukuriamos tik `/data/preflight/<proposal_id>/`; aktyvūs HA failai šiame etape nekeičiami.
-- Visi `/config/packages/*.yaml` ir `*.yml` failai dar kartą parsinti, siūlomiems failams naudojant paruoštas kopijas.
-- Papildomai vykdoma aktyvios Home Assistant konfigūracijos patikra.
-- Sėkminga preflight būsena susiejama su pasiūlymo ir failų fingerprint. Pasikeitus šaltinio failui, preflight nebegalioja.
-- Tik po sėkmingos preflight patikros, įjungto `allow_package_writes` ir tikslios patvirtinimo frazės leidžiama pradėti įrašymą.
-- Prieš įrašymą sukuriama backup kopija. Po įrašymo vykdoma galutinė HA konfigūracijos patikra; nesėkmės atveju failai automatiškai grąžinami.
+- Connector patikrina failų hash, visą pasiūlymą, visus paketų YAML failus ir aktyvią Home Assistant konfigūraciją.
+- Sėkminga preflight būsena susiejama su tiksliais šaltinio ir siūlomo turinio fingerprint.
+- Pasikeitus šaltinio failui, ankstesnė preflight nebegalioja.
+- Prieš įrašymą sukuriama backup kopija; po įrašymo vykdoma galutinė HA patikra; nesėkmės atveju failai grąžinami.
+- Automatinis Home Assistant perkrovimas išjungtas.
 
-Rašymas pagal nutylėjimą išjungtas ir ribojamas `/config/packages/*.yaml`.
+## Autonominė laboratorija
+
+Connector tik siunčia autentifikuotus incidentus Windows Engine. Savęs tobulinimo kandidatai kuriami mini PC izoliuotoje laboratorijoje ir neturi tiesioginės prieigos prie Home Assistant įrašymo kelio.

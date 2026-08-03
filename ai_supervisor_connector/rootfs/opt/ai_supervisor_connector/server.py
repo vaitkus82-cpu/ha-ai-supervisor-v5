@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-APP_VERSION = "5.0.0-alpha14"
+APP_VERSION = "5.0.0b1"
 PORT = int(os.environ.get("PORT", "8099"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -42,6 +42,7 @@ LAST_SNAPSHOT_PATH = DATA_DIR / "last_snapshot.json"
 LAST_ENGINE_RESULT_PATH = DATA_DIR / "last_engine_result.json"
 PROPOSALS_PATH = DATA_DIR / "proposals.json"
 APPLY_HISTORY_PATH = DATA_DIR / "apply_history.json"
+JOBS_PATH = DATA_DIR / "background_jobs.json"
 LOCAL_BACKUP_DIR = DATA_DIR / "file_backups"
 PREFLIGHT_DIR = DATA_DIR / "preflight"
 HA_CONFIG_DIR = Path(os.environ.get("HOMEASSISTANT_CONFIG_DIR", "/homeassistant"))
@@ -54,6 +55,7 @@ MAX_FILES = 600
 MAX_FILE_BYTES = 320 * 1024
 MAX_PROPOSALS = 40
 MAX_HISTORY = 100
+MAX_JOBS = 20
 MAX_CHANGES = 3
 ALLOWED_WRITE_ROOT = "packages/"
 ALLOWED_WRITE_SUFFIXES = {".yaml", ".yml"}
@@ -454,6 +456,33 @@ class EngineClient:
             raise APIError(f"Windows Engine unavailable: {exc.reason}") from exc
         except json.JSONDecodeError as exc:
             raise APIError(f"Invalid Windows Engine response: {exc}") from exc
+
+
+def report_engine_incident(kind: str, message: str, context: dict[str, Any] | None = None) -> None:
+    """Best-effort incident feed for the sandboxed Autonomous Self Lab."""
+    try:
+        EngineClient().request(
+            "POST",
+            "/v1/selflab/incidents",
+            {
+                "source": "home_assistant_connector",
+                "kind": str(kind)[:80],
+                "message": str(message)[:12000],
+                "context": context if isinstance(context, dict) else {},
+            },
+            timeout=10,
+        )
+    except Exception as exc:
+        LOGGER.debug("Could not report incident to Autonomous Self Lab: %s", exc)
+
+
+def report_engine_incident_async(kind: str, message: str, context: dict[str, Any] | None = None) -> None:
+    threading.Thread(
+        target=report_engine_incident,
+        args=(kind, message, context),
+        name="ai-supervisor-incident-report",
+        daemon=True,
+    ).start()
 
 
 def safe_relative(path: Path) -> str:
@@ -1717,6 +1746,96 @@ def add_history(record: dict[str, Any]) -> None:
         write_json(APPLY_HISTORY_PATH, items[:MAX_HISTORY])
 
 
+def _load_jobs() -> list[dict[str, Any]]:
+    value = read_json(JOBS_PATH, [])
+    return value if isinstance(value, list) else []
+
+
+def _write_jobs(items: list[dict[str, Any]]) -> None:
+    write_json(JOBS_PATH, items[:MAX_JOBS])
+
+
+def _update_job(job_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    with LOCK:
+        items = _load_jobs()
+        for item in items:
+            if isinstance(item, dict) and item.get("job_id") == job_id:
+                item.update(updates)
+                _write_jobs(items)
+                return dict(item)
+    raise ValueError("Background job was not found")
+
+
+def get_job(job_id: str) -> dict[str, Any]:
+    with LOCK:
+        for item in _load_jobs():
+            if isinstance(item, dict) and item.get("job_id") == job_id:
+                return dict(item)
+    raise ValueError("Background job was not found")
+
+
+def _run_job(job_id: str, action: str, payload: dict[str, Any]) -> None:
+    try:
+        _update_job(job_id, {"status": "running", "started_at": utc_now()})
+        if action == "sync":
+            result = sync_snapshot()
+        elif action == "check_config":
+            result = HAClient().check_config()
+        elif action == "process_map":
+            result = get_process_map(str(payload.get("query", "")))
+        elif action == "analyse":
+            result = analyse_process(str(payload.get("query", "")))
+        elif action == "preflight":
+            result = preflight_proposal(payload)
+        elif action == "apply":
+            result = apply_proposal(payload)
+        else:
+            raise ValueError(f"Unsupported background action: {action}")
+        _update_job(job_id, {"status": "completed", "finished_at": utc_now(), "result": result})
+    except Exception as exc:
+        detail = traceback.format_exc()
+        _update_job(
+            job_id,
+            {
+                "status": "failed",
+                "finished_at": utc_now(),
+                "error": str(exc),
+                "traceback": detail[-12000:],
+            },
+        )
+        report_engine_incident_async(
+            "background_job_failure",
+            f"Connector background job {action} failed: {exc}",
+            {"job_id": job_id, "action": action, "traceback": detail[-8000:]},
+        )
+
+
+def start_job(incoming: dict[str, Any]) -> dict[str, Any]:
+    action = str(incoming.get("action", "")).strip()
+    if action not in {"sync", "check_config", "process_map", "analyse", "preflight", "apply"}:
+        raise ValueError("Unsupported background action")
+    payload = incoming.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+    job = {
+        "job_id": str(uuid.uuid4()),
+        "action": action,
+        "status": "queued",
+        "created_at": utc_now(),
+    }
+    with LOCK:
+        items = _load_jobs()
+        items.insert(0, job)
+        _write_jobs(items)
+    threading.Thread(
+        target=_run_job,
+        args=(job["job_id"], action, payload),
+        name=f"ai-supervisor-job-{action}",
+        daemon=True,
+    ).start()
+    return job
+
+
 def status() -> dict[str, Any]:
     snapshot = read_json(LAST_SNAPSHOT_PATH, {})
     proposals = read_json(PROPOSALS_PATH, [])
@@ -1743,6 +1862,11 @@ def status() -> dict[str, Any]:
             "snapshot_scope": snapshot.get("snapshot_scope", {}),
         },
         "proposal_count": len(proposals) if isinstance(proposals, list) else 0,
+        "background_jobs": {
+            "running": sum(1 for item in _load_jobs() if isinstance(item, dict) and item.get("status") in {"queued", "running"}),
+            "latest": _load_jobs()[0] if _load_jobs() else None,
+        },
+        "self_lab": health.get("self_lab", {}) if isinstance(health, dict) else {},
         "write_policy": {
             "enabled": load_options()["allow_package_writes"],
             "scope": "packages/*.yaml",
@@ -1763,12 +1887,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def json_response(self, value: Any, status_code: int = 200) -> None:
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            report_engine_incident_async(
+                "client_disconnected",
+                f"Browser disconnected before Connector response completed: {exc}",
+                {"request_path": self.path, "response_bytes": len(body)},
+            )
 
     def file_response(self, path: Path, content_type: str) -> None:
         if not path.exists():
@@ -1807,6 +1938,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(read_json(PROPOSALS_PATH, []))
             elif path == "/api/history":
                 self.json_response(read_json(APPLY_HISTORY_PATH, []))
+            elif path.startswith("/api/jobs/"):
+                self.json_response({"ok": True, "result": get_job(path.rsplit("/", 1)[-1])})
             else:
                 self.send_error(404)
         except Exception as exc:
@@ -1819,6 +1952,8 @@ class Handler(BaseHTTPRequestHandler):
             incoming = self.body()
             if path == "/api/pair":
                 result = pair_engine(incoming)
+            elif path == "/api/jobs/start":
+                result = start_job(incoming)
             elif path == "/api/sync":
                 result = sync_snapshot()
             elif path == "/api/process-map":
@@ -1837,9 +1972,12 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response({"ok": True, "result": result})
         except (ValueError, APIError, json.JSONDecodeError) as exc:
             LOGGER.warning("POST %s rejected: %s", path, exc)
+            report_engine_incident_async("connector_request_rejected", f"POST {path} rejected: {exc}", {"request_path": path})
             self.json_response({"ok": False, "error": str(exc)}, 400)
         except Exception as exc:
-            LOGGER.error("POST %s failed: %s\n%s", path, exc, traceback.format_exc())
+            detail = traceback.format_exc()
+            LOGGER.error("POST %s failed: %s\n%s", path, exc, detail)
+            report_engine_incident_async("connector_unhandled_error", f"POST {path} failed: {exc}", {"request_path": path, "traceback": detail[-8000:]})
             self.json_response({"ok": False, "error": str(exc)}, 500)
 
 

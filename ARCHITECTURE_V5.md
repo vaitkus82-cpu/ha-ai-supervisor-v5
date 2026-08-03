@@ -2,31 +2,37 @@
 
 ## Components
 
-- Home Assistant Connector reads a redacted configuration and inventory snapshot, validates proposals and controls all writes.
-- Windows Engine builds the local index, calls OpenAI when requested and produces anchored structural YAML proposals.
+- **Home Assistant Connector** reads a redacted configuration and inventory snapshot, validates proposals and controls all Home Assistant writes.
+- **Windows Engine** builds the local index, calls OpenAI and produces anchored structural YAML proposals.
+- **Autonomous Self Lab** works only on an isolated source baseline, diagnoses incidents, creates patches, runs tests and produces internal candidates.
 
-## Directional process graph
-
-The graph is directional:
-
-```text
-seed entities -> direct execution components -> dependency definitions
-```
-
-The graph does not traverse from a shared helper or sensor back to every consumer. Dashboards, readiness files, diagnostics files and same-device context cannot expand the execution graph.
-
-## Alpha13.1 proposal flow
+## Proposal flow
 
 ```text
-allowed files
+allowed packages/*.yaml files
   -> repair plan created once
   -> one file per operation-generation request
-  -> component anchor
+  -> exact automation/script/scene anchor
   -> relative structural operations
   -> strict YAML validation and unified diff
-  -> Connector preflight staging
+  -> asynchronous Connector preflight job
   -> user confirmation
   -> backup, write, final HA check, rollback on failure
 ```
 
-TCP port 8765 must be reachable only through a trusted private network. A private Tailscale connection is supported; public router port forwarding is not required and should not be used.
+## Autonomous improvement flow
+
+```text
+Engine logs + proposal failures + Connector incidents
+  -> deduplicated incident queue
+  -> maximum two relevant source files
+  -> exact-text patch in a copied laboratory baseline
+  -> protected-fragment and forbidden-token checks
+  -> Python compile + Engine tests + Connector tests + generated regression tests + JS syntax
+  -> blocked or passed candidate
+  -> optional promotion to laboratory baseline only
+```
+
+The Autonomous Self Lab has no code path that writes to the running installation or Home Assistant. Production deployment remains a separate explicit action.
+
+TCP port 8765 must be reachable only through a trusted private network. Tailscale is supported; public router port forwarding should not be used.

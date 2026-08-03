@@ -55,7 +55,7 @@ class ConnectorAlpha13Tests(unittest.TestCase):
         }
 
     def test_version(self):
-        self.assertEqual("5.0.0-alpha14", self.mod.APP_VERSION)
+        self.assertEqual("5.0.0b1", self.mod.APP_VERSION)
 
     def test_review_only_proposal_is_valid_but_not_apply_allowed(self):
         validation = self.mod.validate_proposal(self.proposal(apply_ready=False, review_only=True))
